@@ -1,6 +1,8 @@
 # ML Algorithms
 
-Hands-on notebooks for the core algorithms introduced in [`../ml_funda.ipynb`](../ml_funda.ipynb). Each one follows the same shape: a short intro + "topics covered" list, then four sections — **Intuition → Training on a dataset → Inspect/interpret → When to use it** — pairing a plain-English definition with runnable code.
+Hands-on notebooks for the core algorithms introduced in [`../ml_funda.ipynb`](../ml_funda.ipynb). Each one follows the same shape: a short intro + "topics covered" list, then four sections — **Intuition → Train/fit on data → Inspect/interpret → When to use it** — pairing a plain-English definition with runnable code.
+
+Algorithms 1–5 are **supervised** (they learn from labeled data); K-Means is **unsupervised** (it groups unlabeled data).
 
 All examples use built-in scikit-learn datasets (no downloads) and run top-to-bottom without warnings.
 
@@ -13,6 +15,7 @@ All examples use built-in scikit-learn datasets (no downloads) and run top-to-bo
 | 3 | [decision_tree.ipynb](decision_tree.ipynb) | Classification | iris | Flowchart of yes/no splits; printable rules + feature importance |
 | 4 | [random_forest.ipynb](random_forest.ipynb) | Classification | wine | Ensemble of trees (bagging); robust default; feature importance |
 | 5 | [knn.ipynb](knn.ipynb) | Classification | iris | Majority vote of nearest neighbours; scale first; choosing `k` |
+| 6 | [kmeans.ipynb](kmeans.ipynb) | Clustering (unsupervised) | make_blobs | Group unlabeled points into `k` clusters; centroids; elbow method |
 
 ## Suggested order
 
@@ -23,6 +26,7 @@ Work through them top to bottom — they build conceptually:
 3. **Decision tree** — first non-linear, fully interpretable model.
 4. **Random forest** — why an *ensemble* of trees beats a single one (overfitting).
 5. **k-NN** — a no-training, distance-based baseline; why scaling matters.
+6. **K-Means** — step into *unsupervised* learning: grouping data with no labels at all.
 
 ## Requirements
 
@@ -39,3 +43,4 @@ pip install numpy pandas scikit-learn
 | Decision tree | A flowchart of yes/no splits | Interpretable, non-linear patterns |
 | Random forest | Many trees voting together | Strong general-purpose baseline |
 | k-NN | Label a point by its nearest neighbours | Small datasets, simple boundaries |
+| K-Means | Group points around `k` moving centroids | Clustering unlabeled data into segments |
