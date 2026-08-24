@@ -1,0 +1,11 @@
+# Vim undo/swap files
+*.un~
+*.swp
+*.swo
+
+# Python
+__pycache__/
+*.pyc
+
+# Jupyter
+.ipynb_checkpoints/
