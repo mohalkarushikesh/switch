@@ -91,6 +91,11 @@ plt.ylabel("Cross entropy loss")
 plt.grid(True, alpha=0.3)
 plt.tight_layout()
 
+# Save the loss curve to disk (Agg backend can't display interactively)
+loss_path = "training_loss.png"
+plt.savefig(loss_path, dpi=120)
+print(f"Training loss plot saved to: {loss_path}")
+
 # --- Inspect a few individual predictions ---
 n_samples = 8
 sample_idx = np.random.choice(len(x_test_t), size=n_samples, replace=False)   # pick 8 random test images
