@@ -46,6 +46,9 @@ class Settings:
     blocked_vendors: tuple[str, ...]  # denied vendor names (lower-cased)
     audit_log_path: str | None      # if set, processed invoices are appended here as JSONL
 
+    # Persistence
+    db_path: str                    # SQLite path; ":memory:" for ephemeral, a file for durable
+
     @property
     def has_llm_credentials(self) -> bool:
         """True if we can reach an LLM: a direct provider key or a proxy base URL."""
@@ -71,6 +74,7 @@ def load_settings() -> Settings:
             if v.strip()
         ),
         audit_log_path=os.getenv("CUSTODIAN_AUDIT_LOG") or None,
+        db_path=os.getenv("CUSTODIAN_DB_PATH") or "data/custodian.db",
     )
 
 

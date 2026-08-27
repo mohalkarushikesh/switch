@@ -9,3 +9,7 @@ __pycache__/
 # Runtime artifacts
 *.jsonl
 data/audit*.jsonl
+*.db
+*.sqlite
+*.sqlite3
+data/*.db

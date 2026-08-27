@@ -108,7 +108,10 @@ The runnable slice of the platform:
 - **Real LLM scoring** via LiteLLM (OpenAI/Groq), with a transparent heuristic fallback so it runs
   with **no API keys**.
 - **Three governance layers** — Data (PII redaction before anything reaches the LLM), Policy (hard
-  rules that can override risk-based decisions), and Audit (append-only JSONL log of every decision).
+  rules that can override risk-based decisions, including duplicate-invoice blocking), and Audit
+  (append-only log of every decision).
+- **SQLite persistence** — processed invoices and the audit trail survive restarts; the ledger
+  balance is reconstructed from paid invoices on startup.
 - **REST API** (FastAPI) and a **console dashboard** to submit invoices and action the review queue.
 - **Docker stack** — the API plus a LiteLLM gateway via `docker compose`.
 
@@ -140,7 +143,7 @@ PYTHONPATH=src uvicorn custodian.api:app --reload
 # c) Full Docker stack (API + LiteLLM gateway)
 docker compose up --build      # -> http://localhost:8000/ui/
 
-# Run the tests (29 tests, offline/heuristic)
+# Run the tests (35 tests, offline/heuristic, in-memory DB)
 python -m pytest tests/ -q
 ```
 
@@ -192,7 +195,8 @@ BankPayeeAgent/
 │       ├── models.py             # typed invoice / assessment / decision / policy models
 │       ├── llm.py                # LiteLLM wrapper (direct or via gateway; graceful fallback)
 │       ├── ledger.py             # mock ledger / payment rail
-│       ├── store.py              # in-memory processed-invoice store
+│       ├── store.py              # in-memory processed-invoice store (legacy/fallback)
+│       ├── db.py                 # SQLite persistence: durable store + audit log
 │       ├── orchestrator.py       # chains agents + governance into one pipeline
 │       ├── main.py               # CLI entrypoint
 │       ├── api.py                # FastAPI service + dashboard mount
@@ -206,7 +210,9 @@ BankPayeeAgent/
 │           ├── policy.py         # hard-rule policy engine
 │           └── audit.py          # append-only JSONL audit log
 └── tests/
+    ├── conftest.py               # shared test setup (src path, offline, in-memory DB)
     ├── test_pipeline.py          # end-to-end pipeline tests
     ├── test_api.py               # REST API tests
-    └── test_governance.py        # data / policy / audit tests
+    ├── test_governance.py        # data / policy / audit tests
+    └── test_persistence.py       # SQLite store + duplicate-detection tests
 ```

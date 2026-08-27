@@ -22,11 +22,10 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .config import settings
-from .governance import AuditLog
-from .ledger import Ledger
+from .db import Database, SqliteAuditLog, SqliteStore
+from .ledger import Ledger, Transaction
 from .models import ApprovalDecision, Invoice, InvoiceStatus, ProcessedInvoice
 from .orchestrator import Custodian
-from .store import InvoiceStore
 
 app = FastAPI(
     title="Custodian — Accounts-Payable Agent API",
@@ -37,12 +36,34 @@ app = FastAPI(
 # Static dashboard directory (<project>/ui), served at /ui.
 _UI_DIR = Path(__file__).resolve().parents[2] / "ui"
 
-# Shared singletons for the process. A single Custodian keeps one ledger across
-# all requests; the store holds every processed record for later lookup.
-_ledger = Ledger(balance=settings.ledger_balance)
-_audit_log = AuditLog(settings.audit_log_path) if settings.audit_log_path else None
+# Shared singletons. Persistence is backed by SQLite so processed invoices and
+# the audit trail survive restarts.
+_db = Database(settings.db_path)
+_store = SqliteStore(_db)
+_audit_log = SqliteAuditLog(_db)
+
+
+def _rebuild_ledger() -> Ledger:
+    """Reconstruct ledger balance + transactions from persisted paid invoices.
+
+    Keeps the balance consistent with the durable store across restarts.
+    """
+    ledger = Ledger(balance=settings.ledger_balance)
+    for record in _store.list(status=InvoiceStatus.PAID.value):
+        ledger.balance -= record.invoice.amount
+        if record.payment and record.payment.transaction_id:
+            ledger.transactions.append(Transaction(
+                transaction_id=record.payment.transaction_id,
+                invoice_id=record.invoice.invoice_id,
+                vendor_account=record.invoice.vendor_account,
+                amount=record.invoice.amount,
+                currency=record.invoice.currency,
+            ))
+    return ledger
+
+
+_ledger = _rebuild_ledger()
 _custodian = Custodian(ledger=_ledger, audit_log=_audit_log)
-_store = InvoiceStore()
 
 
 class InvoiceIn(BaseModel):
@@ -72,10 +93,16 @@ def health() -> dict:
 
 @app.post("/invoices", response_model=ProcessedInvoice)
 def submit_invoice(payload: InvoiceIn) -> ProcessedInvoice:
-    """Run one invoice through the pipeline and persist the result."""
+    """Run one invoice through the pipeline and persist the result.
+
+    A re-submitted invoice id is flagged as a duplicate (blocked by policy) and
+    does NOT overwrite the original record — only the attempt is audited.
+    """
     invoice = Invoice(**payload.model_dump())
-    record = _custodian.process(invoice)
-    _store.save(record)
+    is_duplicate = _store.has(invoice.invoice_id)
+    record = _custodian.process(invoice, is_duplicate=is_duplicate)
+    if not is_duplicate:
+        _store.save(record)
     return record
 
 
@@ -84,8 +111,11 @@ def submit_invoices(payloads: list[InvoiceIn]) -> list[ProcessedInvoice]:
     """Run a batch of invoices through the pipeline in one call."""
     records = []
     for payload in payloads:
-        record = _custodian.process(Invoice(**payload.model_dump()))
-        _store.save(record)
+        invoice = Invoice(**payload.model_dump())
+        is_duplicate = _store.has(invoice.invoice_id)
+        record = _custodian.process(invoice, is_duplicate=is_duplicate)
+        if not is_duplicate:
+            _store.save(record)
         records.append(record)
     return records
 
@@ -145,6 +175,7 @@ def approve_invoice(invoice_id: str) -> ProcessedInvoice:
             f"Manually approved by reviewer but payment failed: {payment.reason}"
         )
     _store.save(record)
+    _audit_log.record(record)
     return record
 
 
@@ -168,6 +199,7 @@ def reject_invoice(invoice_id: str) -> ProcessedInvoice:
     record.status = InvoiceStatus.REJECTED
     record.audit_trail.append("Manually rejected by reviewer.")
     _store.save(record)
+    _audit_log.record(record)
     return record
 
 

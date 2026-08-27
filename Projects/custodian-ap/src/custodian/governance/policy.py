@@ -23,9 +23,21 @@ class PolicyEngine:
             v.lower() for v in (blocked_vendors if blocked_vendors is not None else settings.blocked_vendors)
         }
 
-    def evaluate(self, invoice: Invoice) -> list[PolicyViolation]:
-        """Return all policy violations for an invoice (empty list = compliant)."""
+    def evaluate(self, invoice: Invoice, is_duplicate: bool = False) -> list[PolicyViolation]:
+        """Return all policy violations for an invoice (empty list = compliant).
+
+        is_duplicate signals that an invoice with this id was already processed —
+        a classic double-payment vector, so it is blocked outright.
+        """
         violations: list[PolicyViolation] = []
+
+        # Duplicate submission: never pay the same invoice twice.
+        if is_duplicate:
+            violations.append(PolicyViolation(
+                code="duplicate_invoice",
+                severity="block",
+                message=f"Invoice id '{invoice.invoice_id}' was already processed.",
+            ))
 
         # Data-integrity: a non-positive amount is never payable.
         if invoice.amount <= 0:

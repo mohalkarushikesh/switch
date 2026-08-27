@@ -139,6 +139,23 @@ def test_policies_endpoint():
     assert resp.json()["absolute_ceiling"] == 250000
 
 
-def test_audit_endpoint_404_without_config():
-    # The test app has no CUSTODIAN_AUDIT_LOG set.
-    assert client.get("/audit").status_code == 404
+def test_audit_endpoint_returns_entries():
+    # SQLite audit log is always on; submitting produces an audit entry.
+    client.post("/invoices", json=_clean_invoice("API-AUDIT", 1500.0))
+    resp = client.get("/audit")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["entries"]) >= 1
+    assert any(e["invoice"]["invoice_id"] == "API-AUDIT" for e in body["entries"])
+
+
+def test_duplicate_submission_is_blocked_and_preserves_original():
+    # First submission of a clean invoice is auto-paid.
+    first = client.post("/invoices", json=_clean_invoice("API-DUP", 1234.0))
+    assert first.json()["status"] == "paid"
+    # Re-submitting the same id is blocked as a duplicate...
+    second = client.post("/invoices", json=_clean_invoice("API-DUP", 1234.0))
+    assert second.json()["status"] == "rejected"
+    assert any(v["code"] == "duplicate_invoice" for v in second.json()["policy_violations"])
+    # ...and the stored record still reflects the original paid state.
+    assert client.get("/invoices/API-DUP").json()["status"] == "paid"

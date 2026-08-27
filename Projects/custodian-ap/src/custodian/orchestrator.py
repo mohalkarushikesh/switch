@@ -42,8 +42,11 @@ class Custodian:
         self.policy = policy or PolicyEngine()
         self.audit_log = audit_log
 
-    def process(self, invoice: Invoice) -> ProcessedInvoice:
-        """Run one invoice through the full pipeline and return its record."""
+    def process(self, invoice: Invoice, is_duplicate: bool = False) -> ProcessedInvoice:
+        """Run one invoice through the full pipeline and return its record.
+
+        is_duplicate is passed to the policy layer, which blocks re-submissions.
+        """
         record = ProcessedInvoice(invoice=invoice, status=InvoiceStatus.RECEIVED)
         record.audit_trail.append(
             f"Ingested invoice {invoice.invoice_id} from '{invoice.vendor_name}' "
@@ -72,7 +75,7 @@ class Custodian:
         )
 
         # 3. Policy governance — deterministic rules that can override approval.
-        violations = self.policy.evaluate(invoice)
+        violations = self.policy.evaluate(invoice, is_duplicate=is_duplicate)
         record.policy_violations = violations
         for v in violations:
             record.audit_trail.append(f"Policy [{v.severity}] {v.code}: {v.message}")
@@ -121,5 +124,10 @@ class Custodian:
         return record
 
     def process_many(self, invoices: list[Invoice]) -> list[ProcessedInvoice]:
-        """Process a batch of invoices in order."""
-        return [self.process(inv) for inv in invoices]
+        """Process a batch of invoices in order, flagging in-batch duplicates."""
+        seen: set[str] = set()
+        records: list[ProcessedInvoice] = []
+        for inv in invoices:
+            records.append(self.process(inv, is_duplicate=inv.invoice_id in seen))
+            seen.add(inv.invoice_id)
+        return records
