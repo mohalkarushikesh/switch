@@ -1,0 +1,12 @@
+# Core dependencies for the Custodian MVP
+litellm>=1.40.0        # unified gateway to LLM providers (OpenAI, Groq, ...)
+pydantic>=2.6.0        # typed data models & validation
+python-dotenv>=1.0.0   # load configuration from a .env file
+
+# API service
+fastapi>=0.110.0       # REST API framework
+uvicorn>=0.29.0        # ASGI server to run the API
+
+# Dev / testing
+pytest>=8.0.0
+httpx>=0.27.0          # required by FastAPI's TestClient

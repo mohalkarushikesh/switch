@@ -1,0 +1,17 @@
+# LiteLLM proxy/gateway configuration.
+# The proxy exposes an OpenAI-compatible endpoint on :4000 and routes named
+# models to the real providers using keys from the environment.
+model_list:
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: groq/llama-3.1-8b-instant
+    litellm_params:
+      model: groq/llama-3.1-8b-instant
+      api_key: os.environ/GROQ_API_KEY
+
+litellm_settings:
+  drop_params: true          # silently drop params a given provider doesn't support
+  request_timeout: 60

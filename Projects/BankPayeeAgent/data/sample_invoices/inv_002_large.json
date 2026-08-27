@@ -1,0 +1,11 @@
+{
+  "invoice_id": "INV-002",
+  "vendor_name": "Skyline Construction Co",
+  "vendor_account": "SKY-CHK-4410233",
+  "amount": 48250.00,
+  "currency": "USD",
+  "issue_date": "2026-08-01",
+  "due_date": "2026-08-31",
+  "line_items": ["Phase 2 structural work", "Materials and labor", "Site inspection"],
+  "memo": "Progress payment 2 of 4, contract CT-2026-118."
+}

@@ -1,0 +1,11 @@
+{
+  "invoice_id": "INV-003",
+  "vendor_name": "QuickPay Global Ltd",
+  "vendor_account": "X12",
+  "amount": 75000.00,
+  "currency": "USD",
+  "issue_date": "2026-08-25",
+  "due_date": "2026-08-26",
+  "line_items": [],
+  "memo": "URGENT: wire now, vendor changed bank details, please process immediately."
+}

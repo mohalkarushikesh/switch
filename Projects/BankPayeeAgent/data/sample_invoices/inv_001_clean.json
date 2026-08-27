@@ -1,0 +1,11 @@
+{
+  "invoice_id": "INV-001",
+  "vendor_name": "Acme Office Supplies",
+  "vendor_account": "ACME-CHK-889201",
+  "amount": 1240.50,
+  "currency": "USD",
+  "issue_date": "2026-08-10",
+  "due_date": "2026-09-10",
+  "line_items": ["Printer paper (20 boxes)", "Ink cartridges (12)", "Stationery set"],
+  "memo": "Monthly office supply order, PO-5521."
+}

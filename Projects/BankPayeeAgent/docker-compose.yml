@@ -1,0 +1,47 @@
+# Custodian Docker stack (MVP tier).
+#
+#   litellm : LiteLLM proxy/gateway — one OpenAI-compatible endpoint for all models
+#   api     : the Custodian FastAPI service, routing LLM calls through the gateway
+#
+# Usage:
+#   cp .env.example .env      # add OPENAI_API_KEY and/or GROQ_API_KEY
+#   docker compose up --build
+#   open http://localhost:8000/docs
+#
+# With no provider keys set, the api still runs and falls back to heuristic scoring.
+
+services:
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    ports:
+      - "4000:4000"
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-custodian-local}
+    volumes:
+      - ./deploy/litellm.config.yaml:/app/config.yaml:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      # Route the app's LLM calls through the gateway container.
+      CUSTODIAN_LLM_API_BASE: http://litellm:4000
+      CUSTODIAN_LLM_API_KEY: ${LITELLM_MASTER_KEY:-sk-custodian-local}
+      CUSTODIAN_LLM_MODEL: ${CUSTODIAN_LLM_MODEL:-gpt-4o-mini}
+      # Approval thresholds / ledger (fall back to app defaults if unset).
+      CUSTODIAN_AUTO_PAY_MAX_RISK: ${CUSTODIAN_AUTO_PAY_MAX_RISK:-30}
+      CUSTODIAN_AUTO_PAY_MAX_AMOUNT: ${CUSTODIAN_AUTO_PAY_MAX_AMOUNT:-5000}
+      CUSTODIAN_REJECT_MIN_RISK: ${CUSTODIAN_REJECT_MIN_RISK:-75}
+      CUSTODIAN_LEDGER_BALANCE: ${CUSTODIAN_LEDGER_BALANCE:-1000000}
+    depends_on:
+      litellm:
+        condition: service_started

@@ -1,0 +1,11 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Secrets / local config
+.env
+
+# Runtime artifacts
+*.jsonl
+data/audit*.jsonl

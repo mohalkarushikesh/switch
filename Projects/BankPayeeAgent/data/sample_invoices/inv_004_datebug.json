@@ -1,0 +1,11 @@
+{
+  "invoice_id": "INV-004",
+  "vendor_name": "Bright Cleaning Services",
+  "vendor_account": "BRIGHT-CHK-77120",
+  "amount": 3000.00,
+  "currency": "USD",
+  "issue_date": "2026-08-20",
+  "due_date": "2026-08-05",
+  "line_items": ["Weekly cleaning (August)"],
+  "memo": "Standard monthly cleaning contract."
+}

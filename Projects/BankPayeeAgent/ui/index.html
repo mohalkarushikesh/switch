@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Custodian — Accounts Payable</title>
+  <style>
+    :root {
+      --bg: #0f172a; --panel: #1e293b; --panel2: #273449;
+      --text: #e2e8f0; --muted: #94a3b8; --border: #334155;
+      --blue: #2563eb; --green: #16a34a; --amber: #d97706; --red: #dc2626;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: var(--bg); color: var(--text); font-size: 14px;
+    }
+    header {
+      padding: 18px 24px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 24px; flex-wrap: wrap;
+    }
+    header h1 { font-size: 18px; margin: 0; }
+    .pill {
+      background: var(--panel2); padding: 4px 10px; border-radius: 999px;
+      color: var(--muted); font-size: 12px;
+    }
+    .pill b { color: var(--text); }
+    main { padding: 24px; max-width: 1100px; margin: 0 auto; }
+    .row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+    button {
+      background: var(--blue); color: white; border: none; padding: 8px 14px;
+      border-radius: 6px; cursor: pointer; font-size: 13px;
+    }
+    button:hover { filter: brightness(1.1); }
+    button.ghost { background: var(--panel2); color: var(--text); }
+    button.ok { background: var(--green); }
+    button.bad { background: var(--red); }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; }
+    tr.clickable { cursor: pointer; }
+    tr.clickable:hover { background: var(--panel2); }
+    .badge {
+      display: inline-block; padding: 3px 9px; border-radius: 999px;
+      font-size: 12px; font-weight: 600;
+    }
+    .badge.paid { background: rgba(22,163,74,.18); color: #4ade80; }
+    .badge.needs_review { background: rgba(217,119,6,.18); color: #fbbf24; }
+    .badge.rejected { background: rgba(220,38,38,.18); color: #f87171; }
+    .badge.failed { background: rgba(220,38,38,.18); color: #f87171; }
+    .risk-bar {
+      display: inline-block; width: 80px; height: 8px; border-radius: 4px;
+      background: var(--border); vertical-align: middle; overflow: hidden;
+    }
+    .risk-fill { height: 100%; }
+    .trail {
+      background: var(--panel); border-left: 3px solid var(--blue);
+      padding: 12px 16px; margin: 0; font-size: 13px; color: var(--muted);
+    }
+    .trail li { margin: 4px 0; }
+    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
+    .actions button { padding: 5px 10px; font-size: 12px; }
+    .empty { color: var(--muted); padding: 24px; text-align: center; }
+    h2 { font-size: 15px; margin: 0 0 12px; }
+    input, textarea {
+      background: var(--bg); border: 1px solid var(--border); color: var(--text);
+      border-radius: 6px; padding: 7px 9px; font-size: 13px; width: 100%;
+    }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 3px; }
+    .field { margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🛡️ Custodian</h1>
+    <span class="pill">Scoring: <b id="mode">…</b></span>
+    <span class="pill">Model: <b id="model">…</b></span>
+    <span class="pill">Ledger: <b id="ledger">…</b></span>
+  </header>
+
+  <main>
+    <div class="row">
+      <button id="load-samples">Load sample invoices</button>
+      <button class="ghost" id="refresh">Refresh</button>
+      <button class="ghost" id="toggle-form">Submit an invoice ▾</button>
+    </div>
+
+    <div class="panel" id="form-panel" style="display:none; margin-bottom:20px;">
+      <h2>Submit invoice</h2>
+      <div class="grid">
+        <div class="field"><label>Invoice ID</label><input id="f-id" value="INV-100"></div>
+        <div class="field"><label>Vendor name</label><input id="f-vendor" value="New Vendor Co"></div>
+        <div class="field"><label>Vendor account</label><input id="f-acct" value="NVC-CHK-100200"></div>
+        <div class="field"><label>Amount (USD)</label><input id="f-amount" type="number" value="2500"></div>
+        <div class="field"><label>Issue date</label><input id="f-issue" value="2026-08-15"></div>
+        <div class="field"><label>Due date</label><input id="f-due" value="2026-09-15"></div>
+      </div>
+      <div class="field"><label>Line items (comma separated)</label><input id="f-items" value="Consulting, Support"></div>
+      <div class="field"><label>Memo</label><input id="f-memo" value="Q3 services"></div>
+      <button id="submit-invoice">Run through pipeline</button>
+    </div>
+
+    <div class="panel">
+      <h2>Processed invoices</h2>
+      <table>
+        <thead>
+          <tr><th>Invoice</th><th>Vendor</th><th>Amount</th><th>Risk</th><th>Status</th><th>Actions</th></tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div class="empty" id="empty">No invoices yet — click “Load sample invoices”.</div>
+    </div>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const money = (n) => n.toLocaleString(undefined, { style: 'currency', currency: 'USD' });
+    let expanded = null; // invoice_id whose audit trail is open
+
+    // Sample invoices mirrored from data/sample_invoices for the "Load samples" button.
+    const SAMPLES = [
+      { invoice_id:"INV-001", vendor_name:"Acme Office Supplies", vendor_account:"ACME-CHK-889201", amount:1240.50, issue_date:"2026-08-10", due_date:"2026-09-10", line_items:["Paper","Ink"], memo:"Monthly office supply order." },
+      { invoice_id:"INV-002", vendor_name:"Skyline Construction Co", vendor_account:"SKY-CHK-4410233", amount:48250.00, issue_date:"2026-08-01", due_date:"2026-08-31", line_items:["Phase 2 work"], memo:"Progress payment 2 of 4." },
+      { invoice_id:"INV-003", vendor_name:"QuickPay Global Ltd", vendor_account:"X12", amount:75000.00, issue_date:"2026-08-25", due_date:"2026-08-26", line_items:[], memo:"URGENT: wire now, changed bank details." },
+      { invoice_id:"INV-004", vendor_name:"Bright Cleaning Services", vendor_account:"BRIGHT-CHK-77120", amount:3000.00, issue_date:"2026-08-20", due_date:"2026-08-05", line_items:["Weekly cleaning"], memo:"Standard monthly cleaning." },
+    ];
+
+    const riskColor = (s) => s >= 75 ? 'var(--red)' : s >= 31 ? 'var(--amber)' : 'var(--green)';
+
+    async function refreshMeta() {
+      const [h, l] = await Promise.all([
+        fetch('/health').then(r => r.json()),
+        fetch('/ledger').then(r => r.json()),
+      ]);
+      $('mode').textContent = h.scoring_mode;
+      $('model').textContent = h.model;
+      $('ledger').textContent = money(l.balance);
+    }
+
+    async function refreshRows() {
+      const records = await fetch('/invoices').then(r => r.json());
+      const tbody = $('rows');
+      tbody.innerHTML = '';
+      $('empty').style.display = records.length ? 'none' : 'block';
+
+      for (const rec of records) {
+        const inv = rec.invoice, a = rec.assessment || {}, score = a.risk_score ?? 0;
+        const tr = document.createElement('tr');
+        tr.className = 'clickable';
+        tr.innerHTML = `
+          <td>${inv.invoice_id}</td>
+          <td>${inv.vendor_name}</td>
+          <td>${money(inv.amount)}</td>
+          <td>
+            <span class="risk-bar"><span class="risk-fill" style="width:${score}%;background:${riskColor(score)}"></span></span>
+            ${score}
+          </td>
+          <td><span class="badge ${rec.status}">${rec.status.replace('_',' ')}</span></td>
+          <td class="actions"></td>`;
+        // Approve / reject actions only for the review queue.
+        const cell = tr.querySelector('.actions');
+        if (rec.status === 'needs_review') {
+          const ok = document.createElement('button');
+          ok.className = 'ok'; ok.textContent = 'Approve';
+          ok.onclick = (e) => { e.stopPropagation(); act(inv.invoice_id, 'approve'); };
+          const bad = document.createElement('button');
+          bad.className = 'bad'; bad.textContent = 'Reject';
+          bad.onclick = (e) => { e.stopPropagation(); act(inv.invoice_id, 'reject'); };
+          cell.append(ok, bad);
+        }
+        tr.onclick = () => { expanded = expanded === inv.invoice_id ? null : inv.invoice_id; renderTrail(tbody, tr, rec); };
+        tbody.appendChild(tr);
+        if (expanded === inv.invoice_id) renderTrail(tbody, tr, rec);
+      }
+    }
+
+    function renderTrail(tbody, afterRow, rec) {
+      // Remove any existing trail row for a clean re-render.
+      const next = afterRow.nextElementSibling;
+      if (next && next.classList.contains('trail-row')) { next.remove(); if (expanded !== rec.invoice.invoice_id) return; }
+      if (expanded !== rec.invoice.invoice_id) return;
+      const tr = document.createElement('tr');
+      tr.className = 'trail-row';
+      const items = (rec.audit_trail || []).map(s => `<li>${s}</li>`).join('');
+      tr.innerHTML = `<td colspan="6"><ul class="trail">${items}</ul></td>`;
+      afterRow.after(tr);
+    }
+
+    async function act(id, action) {
+      const resp = await fetch(`/invoices/${id}/${action}`, { method: 'POST' });
+      if (!resp.ok) { alert(`${action} failed: ${(await resp.json()).detail}`); return; }
+      await refreshAll();
+    }
+
+    async function submitOne(payload) {
+      const resp = await fetch('/invoices', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!resp.ok) alert('Submit failed: ' + (await resp.text()));
+    }
+
+    async function refreshAll() { await Promise.all([refreshMeta(), refreshRows()]); }
+
+    $('load-samples').onclick = async () => { for (const s of SAMPLES) await submitOne(s); await refreshAll(); };
+    $('refresh').onclick = refreshAll;
+    $('toggle-form').onclick = () => {
+      const p = $('form-panel');
+      p.style.display = p.style.display === 'none' ? 'block' : 'none';
+    };
+    $('submit-invoice').onclick = async () => {
+      await submitOne({
+        invoice_id: $('f-id').value, vendor_name: $('f-vendor').value,
+        vendor_account: $('f-acct').value, amount: parseFloat($('f-amount').value),
+        issue_date: $('f-issue').value, due_date: $('f-due').value,
+        line_items: $('f-items').value.split(',').map(s => s.trim()).filter(Boolean),
+        memo: $('f-memo').value,
+      });
+      await refreshAll();
+    };
+
+    refreshAll();
+  </script>
+</body>
+</html>
