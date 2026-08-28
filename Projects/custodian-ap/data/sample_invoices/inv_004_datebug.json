@@ -3,7 +3,7 @@
   "vendor_name": "Bright Cleaning Services",
   "vendor_account": "BRIGHT-CHK-77120",
   "amount": 3000.00,
-  "currency": "USD",
+  "currency": "INR",
   "issue_date": "2026-08-20",
   "due_date": "2026-08-05",
   "line_items": ["Weekly cleaning (August)"],

@@ -58,7 +58,7 @@ def main(argv: list[str] | None = None) -> int:
     mode = "LLM (LiteLLM)" if settings.has_llm_credentials else "heuristic (no LLM key set)"
     print(f"Custodian — accounts-payable pipeline")
     print(f"Scoring mode: {mode} | model: {settings.llm_model}")
-    print(f"Ledger starting balance: {settings.ledger_balance:,.2f} USD\n")
+    print(f"Ledger starting balance: ₹{settings.ledger_balance:,.2f}\n")
 
     invoices = IngestAgent().from_directory(data_dir)
     if not invoices:
@@ -82,8 +82,8 @@ def main(argv: list[str] | None = None) -> int:
     print("=" * 60)
     print(f"Processed {len(records)} invoice(s): "
           f"{paid} paid, {review} to review, {rejected} rejected.")
-    print(f"Total auto-paid: {total_paid:,.2f} USD")
-    print(f"Ledger balance now: {custodian.ledger.balance:,.2f} USD")
+    print(f"Total auto-paid: ₹{total_paid:,.2f}")
+    print(f"Ledger balance now: ₹{custodian.ledger.balance:,.2f}")
     return 0
 
 

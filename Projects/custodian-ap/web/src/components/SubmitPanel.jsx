@@ -14,7 +14,7 @@ Invoice Date: 2026-08-14
 Due Date: 2026-09-14
 - Cloud hosting (August)
 - Support retainer
-Total: $4,200.00
+Total: ₹4,200.00
 Memo: Monthly services`
 
 export default function SubmitPanel({ onSubmit, onOcr }) {
@@ -53,7 +53,7 @@ export default function SubmitPanel({ onSubmit, onOcr }) {
           <div><label>Invoice ID</label><input value={form.invoice_id} onChange={set('invoice_id')} /></div>
           <div><label>Vendor</label><input value={form.vendor_name} onChange={set('vendor_name')} /></div>
           <div><label>Vendor account</label><input value={form.vendor_account} onChange={set('vendor_account')} /></div>
-          <div><label>Amount (USD)</label><input type="number" value={form.amount} onChange={set('amount')} /></div>
+          <div><label>Amount (INR)</label><input type="number" value={form.amount} onChange={set('amount')} /></div>
           <div><label>Issue date</label><input value={form.issue_date} onChange={set('issue_date')} /></div>
           <div><label>Due date</label><input value={form.due_date} onChange={set('due_date')} /></div>
           <div style={{ gridColumn: '1 / -1' }}><label>Line items (comma separated)</label><input value={form.line_items} onChange={set('line_items')} /></div>

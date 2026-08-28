@@ -28,7 +28,7 @@ def _clean_invoice(invoice_id: str = "API-001", amount: float = 1200.0) -> dict:
         "vendor_name": "Acme Office Supplies",
         "vendor_account": "ACME-CHK-889201",
         "amount": amount,
-        "currency": "USD",
+        "currency": "INR",
         "issue_date": "2026-08-10",
         "due_date": "2026-09-10",
         "line_items": ["Paper", "Ink"],

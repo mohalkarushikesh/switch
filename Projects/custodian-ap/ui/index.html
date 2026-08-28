@@ -95,7 +95,7 @@
         <div class="field"><label>Invoice ID</label><input id="f-id" value="INV-100"></div>
         <div class="field"><label>Vendor name</label><input id="f-vendor" value="New Vendor Co"></div>
         <div class="field"><label>Vendor account</label><input id="f-acct" value="NVC-CHK-100200"></div>
-        <div class="field"><label>Amount (USD)</label><input id="f-amount" type="number" value="2500"></div>
+        <div class="field"><label>Amount (INR)</label><input id="f-amount" type="number" value="2500"></div>
         <div class="field"><label>Issue date</label><input id="f-issue" value="2026-08-15"></div>
         <div class="field"><label>Due date</label><input id="f-due" value="2026-09-15"></div>
       </div>
@@ -118,7 +118,7 @@
 
   <script>
     const $ = (id) => document.getElementById(id);
-    const money = (n) => n.toLocaleString(undefined, { style: 'currency', currency: 'USD' });
+    const money = (n) => n.toLocaleString('en-IN', { style: 'currency', currency: 'INR' });
     let expanded = null; // invoice_id whose audit trail is open
 
     // Sample invoices mirrored from data/sample_invoices for the "Load samples" button.

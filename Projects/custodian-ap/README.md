@@ -122,6 +122,9 @@ The runnable slice of the platform:
   endpoints (`CUSTODIAN_API_KEYS`); off by default, reads stay open.
 - **OCR ingest** — parse OCR-style invoice text into structured invoices (`POST /invoices/ocr`).
 - **Notifications** — rejected or high-risk invoices fire a webhook and/or JSONL log entry.
+- **MLflow model tracking** — each risk-scoring decision (model, source, score, amount) logged to
+  MLflow when `CUSTODIAN_MLFLOW_URI` is set (local file store, SQLite, or a server).
+- **INR (₹) throughout** — all amounts are rupees.
 - **Two Docker stacks** — a minimal one (API + LiteLLM) and a full governance/observability stack
   (`docker-compose.infra.yml`: Keycloak, Postgres, Langfuse, Prometheus, Grafana, SPIRE).
 
@@ -165,8 +168,9 @@ docker compose -f docker-compose.infra.yml up --build
 #    Keycloak http://localhost:8080 · Langfuse http://localhost:3001
 #    Prometheus http://localhost:9090 · Grafana http://localhost:3002
 
-# Run the tests (56 pass + 1 skipped without the Presidio model; offline, in-memory DB)
+# Run the backend tests (58 pass + 1 skipped without the Presidio model; offline, in-memory DB)
 python -m pytest tests/ -q
+# Frontend tests:  cd web && npm test   (5 component tests)
 ```
 
 > **PowerShell (Windows):** the `PYTHONPATH=src <cmd>` prefix is bash syntax. In PowerShell set
@@ -210,6 +214,25 @@ Write endpoints (POST) accept an `X-API-Key` header when auth is enabled
 
 _The course spans **21 lectures** covering Overview, Prerequisites, Curriculum, and Technologies._
 
+## Environment caveats
+
+The pure-Python app (pipeline, governance, persistence, auth, OCR, notifications, metrics) and the
+React web app are **built and verified**. A few things are gated by the environment they were
+developed in (a locked-down corporate Windows machine), not by the code:
+
+- **Container stacks** (`docker-compose.yml`, `docker-compose.infra.yml`) are **YAML-validated but
+  not run here** — no container runtime available (winget/Docker blocked by group policy). They are
+  ready to run on an unrestricted host.
+- **Presidio PII backend** works, but the `en_core_web_sm` spaCy model download is firewall-blocked,
+  so that path can't execute here; it **degrades gracefully to regex** (verified). Install the model
+  on an unrestricted network to enable it.
+- **MLflow** tracking is verified against a **local file store**; the `docker-compose.infra.yml`
+  MLflow *server* is unrun config.
+- **Real LLM scoring** needs an API key; without one the **heuristic** scorer is used (fully
+  exercised by the tests and demos).
+
+All amounts are in **INR (₹)**.
+
 ## Project Structure
 
 ```
@@ -246,6 +269,7 @@ BankPayeeAgent/
 │       ├── db.py                 # SQLite persistence: durable store + audit log
 │       ├── ocr.py                # OCR-text → invoice-field extraction
 │       ├── notify.py             # notifications (log / webhook) for flagged invoices
+│       ├── tracking.py           # MLflow model tracking for scoring decisions
 │       ├── orchestrator.py       # chains agents + governance into one pipeline
 │       ├── main.py               # CLI entrypoint
 │       ├── api.py                # FastAPI service + dashboard mount

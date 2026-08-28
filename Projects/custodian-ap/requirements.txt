@@ -11,6 +11,10 @@ uvicorn>=0.29.0        # ASGI server to run the API
 # Also requires a spaCy model:  python -m spacy download en_core_web_sm
 # presidio-analyzer>=2.2.0
 
+# Optional: model tracking (CUSTODIAN_MLFLOW_URI). The skinny client is enough
+# for logging to a file store or tracking server.
+# mlflow-skinny>=3.0.0
+
 # Dev / testing
 pytest>=8.0.0
 httpx>=0.27.0          # required by FastAPI's TestClient

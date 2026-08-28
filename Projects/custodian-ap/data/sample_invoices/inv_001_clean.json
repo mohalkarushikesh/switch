@@ -3,7 +3,7 @@
   "vendor_name": "Acme Office Supplies",
   "vendor_account": "ACME-CHK-889201",
   "amount": 1240.50,
-  "currency": "USD",
+  "currency": "INR",
   "issue_date": "2026-08-10",
   "due_date": "2026-09-10",
   "line_items": ["Printer paper (20 boxes)", "Ink cartridges (12)", "Stationery set"],

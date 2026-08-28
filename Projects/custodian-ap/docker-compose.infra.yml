@@ -119,13 +119,78 @@ services:
       CUSTODIAN_LLM_MODEL: ${CUSTODIAN_LLM_MODEL:-gpt-4o-mini}
       CUSTODIAN_DB_PATH: /data/custodian.db
       CUSTODIAN_PII_BACKEND: ${CUSTODIAN_PII_BACKEND:-regex}
+      # Model-governance layer: log scoring decisions to the MLflow server.
+      CUSTODIAN_MLFLOW_URI: http://mlflow:5000
     volumes:
       - api-data:/data
     depends_on:
       - litellm
       - prometheus
+      - mlflow
+
+  # Model layer — MLflow tracking server (SQLite backend + local artifacts).
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:latest
+    command: >
+      mlflow server --host 0.0.0.0 --port 5000
+      --backend-store-uri sqlite:////data/mlflow.db
+      --artifacts-destination /data/artifacts
+    volumes:
+      - mlflow-data:/data
+    ports:
+      - "5000:5000"
+
+  # Secrets layer — Infisical (needs Postgres + Redis). Illustrative: set real
+  # ENCRYPTION_KEY / AUTH_SECRET before use.
+  redis:
+    image: redis:7-alpine
+
+  infisical:
+    image: infisical/infisical:latest-postgres
+    environment:
+      ENCRYPTION_KEY: ${INFISICAL_ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
+      AUTH_SECRET: ${INFISICAL_AUTH_SECRET:-changeme-infisical-auth-secret}
+      DB_CONNECTION_URI: postgresql://${POSTGRES_USER:-custodian}:${POSTGRES_PASSWORD:-custodian}@postgres:5432/${POSTGRES_DB:-custodian}
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "8082:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  # Data-catalog layer — OpenMetadata (heavy; requires MySQL + Elasticsearch).
+  # Illustrative only — a real deployment also runs its ingestion/airflow stack.
+  opensearch:
+    image: opensearchproject/opensearch:2.11.1
+    environment:
+      discovery.type: single-node
+      plugins.security.disabled: "true"
+      OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m
+    ports:
+      - "9200:9200"
+
+  openmetadata:
+    image: docker.getcollate.io/openmetadata/server:1.5.0
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: ${POSTGRES_USER:-custodian}
+      DB_USER_PASSWORD: ${POSTGRES_PASSWORD:-custodian}
+      DB_SCHEME: postgresql
+      SEARCH_TYPE: opensearch
+      OPENSEARCH_HOST: opensearch
+    ports:
+      - "8585:8585"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      opensearch:
+        condition: service_started
 
 volumes:
   pgdata:
   spire-data:
   api-data:
+  mlflow-data:

@@ -1,7 +1,7 @@
 // Small shared formatting/derivation helpers.
 
-export const money = (n, currency = 'USD') =>
-  (n ?? 0).toLocaleString(undefined, { style: 'currency', currency })
+export const money = (n, currency = 'INR') =>
+  (n ?? 0).toLocaleString('en-IN', { style: 'currency', currency })
 
 // Risk band -> color. Mirrors the backend's routing thresholds.
 export const riskColor = (score) =>

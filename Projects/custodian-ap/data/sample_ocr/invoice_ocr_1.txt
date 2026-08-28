@@ -12,5 +12,5 @@ Line items:
 - Ink cartridges (12)
 - Stationery set
 
-Total: $1,340.75
+Total: ₹1,340.75
 Memo: Monthly office supply order, PO-5521.

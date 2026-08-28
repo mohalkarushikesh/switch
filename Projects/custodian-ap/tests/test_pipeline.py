@@ -25,7 +25,7 @@ def _invoice(**overrides) -> Invoice:
         vendor_name="Test Vendor",
         vendor_account="TEST-CHK-123456",
         amount=1000.0,
-        currency="USD",
+        currency="INR",
         issue_date=date(2026, 8, 1),
         due_date=date(2026, 9, 1),
         line_items=["Consulting"],

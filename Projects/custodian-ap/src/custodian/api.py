@@ -28,6 +28,7 @@ from .ledger import Ledger, Transaction
 from .models import ApprovalDecision, Invoice, InvoiceStatus, ProcessedInvoice
 from .notify import LogNotifier, MultiNotifier, Notifier, WebhookNotifier
 from .orchestrator import Custodian
+from .tracking import build_tracker
 
 app = FastAPI(
     title="Custodian — Accounts-Payable Agent API",
@@ -78,7 +79,12 @@ def _build_notifier() -> Notifier | None:
 
 
 _ledger = _rebuild_ledger()
-_custodian = Custodian(ledger=_ledger, audit_log=_audit_log, notifier=_build_notifier())
+_custodian = Custodian(
+    ledger=_ledger,
+    audit_log=_audit_log,
+    notifier=_build_notifier(),
+    tracker=build_tracker(settings.mlflow_tracking_uri, settings.mlflow_experiment),
+)
 
 
 # --- Authentication -------------------------------------------------------
@@ -127,7 +133,7 @@ class InvoiceIn(BaseModel):
     vendor_name: str
     vendor_account: str
     amount: float
-    currency: str = "USD"
+    currency: str = "INR"
     issue_date: date
     due_date: date
     line_items: list[str] = Field(default_factory=list)

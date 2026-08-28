@@ -61,6 +61,12 @@ class Settings:
     webhook_url: str | None          # POST notifications here (best-effort)
     notify_log_path: str | None      # append notifications to this JSONL file
 
+    # Model tracking (governance "Model" layer): if set, each risk-scoring
+    # decision is logged to MLflow (a local file store like "./mlruns", or a
+    # tracking-server URL). Empty = disabled.
+    mlflow_tracking_uri: str | None
+    mlflow_experiment: str
+
     @property
     def has_llm_credentials(self) -> bool:
         """True if we can reach an LLM: a direct provider key or a proxy base URL."""
@@ -92,6 +98,8 @@ def load_settings() -> Settings:
         notify_min_risk=_get_int("CUSTODIAN_NOTIFY_MIN_RISK", 70),
         webhook_url=os.getenv("CUSTODIAN_WEBHOOK_URL") or None,
         notify_log_path=os.getenv("CUSTODIAN_NOTIFY_LOG") or None,
+        mlflow_tracking_uri=os.getenv("CUSTODIAN_MLFLOW_URI") or None,
+        mlflow_experiment=os.getenv("CUSTODIAN_MLFLOW_EXPERIMENT", "custodian-risk"),
     )
 
 

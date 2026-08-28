@@ -21,6 +21,7 @@ from .governance import AuditLog, PIIRedactor, PolicyEngine
 from .ledger import Ledger
 from .models import ApprovalDecision, Invoice, InvoiceStatus, ProcessedInvoice
 from .notify import Notification, Notifier
+from .tracking import ModelTracker
 
 
 class Custodian:
@@ -31,6 +32,7 @@ class Custodian:
         policy: PolicyEngine | None = None,
         audit_log: AuditLog | None = None,
         notifier: Notifier | None = None,
+        tracker: ModelTracker | None = None,
     ):
         # A single ledger is shared across all payments in this run.
         self.ledger = ledger or Ledger(balance=settings.ledger_balance)
@@ -47,6 +49,9 @@ class Custodian:
         # Notifications (optional): fire on rejected / high-risk invoices.
         self.notifier = notifier
         self.notify_min_risk = settings.notify_min_risk
+
+        # Model tracking (optional): log each scoring decision to MLflow.
+        self.tracker = tracker
 
     def process(self, invoice: Invoice, is_duplicate: bool = False) -> ProcessedInvoice:
         """Run one invoice through the full pipeline and return its record.
@@ -73,6 +78,9 @@ class Custodian:
             f"Risk scored {assessment.risk_score}/100 via {assessment.source}. "
             f"Flags: {assessment.fraud_flags or 'none'}."
         )
+        if self.tracker is not None:
+            self.tracker.log_scoring(invoice, assessment)
+            record.audit_trail.append("Model layer: scoring logged to MLflow.")
 
         # 2. Approval routing (risk-based).
         decision = self.approval.decide(invoice, assessment)

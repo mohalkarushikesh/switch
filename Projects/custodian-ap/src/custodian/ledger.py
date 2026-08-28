@@ -29,7 +29,7 @@ class Ledger:
         return amount <= self.balance
 
     def pay(self, invoice_id: str, vendor_account: str, amount: float,
-            currency: str = "USD") -> Transaction:
+            currency: str = "INR") -> Transaction:
         """Debit the balance and record the transaction.
 
         Raises ValueError if funds are insufficient — the caller is expected to

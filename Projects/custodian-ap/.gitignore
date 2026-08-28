@@ -13,3 +13,5 @@ data/audit*.jsonl
 *.sqlite
 *.sqlite3
 data/*.db
+mlruns/
+mlflow.db

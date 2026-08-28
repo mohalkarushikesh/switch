@@ -24,7 +24,7 @@ _FIELD_PATTERNS: dict[str, re.Pattern] = {
     "vendor_account": re.compile(
         _LINE + r"(?:account|acct|iban|a/c)\s*(?:number|no\.?|#)?\s*[:#]\s*([A-Za-z0-9\-]+)", _FLAGS),
     "amount": re.compile(
-        _LINE + r"(?:grand\s*total|amount\s*due|total|amount)\s*[:]\s*\$?\s*([\d,]+(?:\.\d{1,2})?)", _FLAGS),
+        _LINE + r"(?:grand\s*total|amount\s*due|total|amount)\s*[:]\s*(?:₹|rs\.?|inr|\$)?\s*([\d,]+(?:\.\d{1,2})?)", _FLAGS),
     "issue_date": re.compile(
         _LINE + r"(?:invoice\s*date|issue\s*date|date)\s*[:]\s*(\d{4}-\d{2}-\d{2})", _FLAGS),
     "due_date": re.compile(

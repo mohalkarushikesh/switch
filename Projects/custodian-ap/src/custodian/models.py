@@ -27,7 +27,7 @@ class Invoice(BaseModel):
     vendor_name: str
     vendor_account: str          # destination account for payment
     amount: float
-    currency: str = "USD"
+    currency: str = "INR"
     issue_date: date
     due_date: date
     line_items: list[str] = Field(default_factory=list)
