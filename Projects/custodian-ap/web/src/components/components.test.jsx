@@ -6,6 +6,7 @@ import StatsBar from './StatsBar.jsx'
 import Attention from './Attention.jsx'
 import InvoiceTable from './InvoiceTable.jsx'
 import Charts from './Charts.jsx'
+import { toCsv } from '../lib/csv.js'
 
 const paidRec = {
   invoice: { invoice_id: 'T-1', vendor_name: 'Acme', vendor_account: 'A-123456', amount: 1234, currency: 'INR' },
@@ -84,5 +85,16 @@ describe('Charts', () => {
   it('shows an empty state with no records', () => {
     render(<Charts records={[]} />)
     expect(screen.getByText(/No data yet/)).toBeDefined()
+  })
+})
+
+describe('CSV export', () => {
+  it('produces a header row and one row per invoice', () => {
+    const csv = toCsv([paidRec, rejectedRec])
+    const lines = csv.split('\n')
+    expect(lines[0]).toContain('invoice_id')
+    expect(lines).toHaveLength(3) // header + 2 rows
+    expect(lines[1]).toContain('T-1')
+    expect(lines[2]).toContain('T-2')
   })
 })

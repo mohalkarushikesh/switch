@@ -1,8 +1,11 @@
 // Submit invoices either as a structured form or as OCR-style text.
 import { useState } from 'react'
 
+// Fresh, unique id each time so repeated submits aren't blocked as duplicates.
+const genId = () => 'INV-' + Date.now().toString().slice(-6)
+
 const BLANK = {
-  invoice_id: 'INV-100', vendor_name: 'New Vendor Co', vendor_account: 'NVC-CHK-100200',
+  vendor_name: 'New Vendor Co', vendor_account: 'NVC-CHK-100200',
   amount: 2500, issue_date: '2026-08-15', due_date: '2026-09-15',
   line_items: 'Consulting, Support', memo: 'Q3 services',
 }
@@ -19,16 +22,24 @@ Memo: Monthly services`
 
 export default function SubmitPanel({ onSubmit, onOcr }) {
   const [tab, setTab] = useState('form')
-  const [form, setForm] = useState(BLANK)
+  const [form, setForm] = useState(() => ({ ...BLANK, invoice_id: genId() }))
   const [ocr, setOcr] = useState(SAMPLE_OCR)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value })
 
-  async function go(fn) {
+  async function go(fn, freshId = false) {
     setBusy(true); setErr('')
-    try { await fn() } catch (e) { setErr(String(e.message || e)) } finally { setBusy(false) }
+    try {
+      await fn()
+      // After a successful form submit, roll to a new unique id for the next one.
+      if (freshId) setForm((f) => ({ ...f, invoice_id: genId() }))
+    } catch (e) {
+      setErr(String(e.message || e))
+    } finally {
+      setBusy(false)
+    }
   }
 
   const submitForm = () =>
@@ -38,6 +49,7 @@ export default function SubmitPanel({ onSubmit, onOcr }) {
         amount: parseFloat(form.amount),
         line_items: String(form.line_items).split(',').map((s) => s.trim()).filter(Boolean),
       }),
+      true,
     )
 
   return (

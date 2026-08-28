@@ -3,6 +3,11 @@
   --text: #e2e8f0; --muted: #94a3b8; --border: #334155;
   --blue: #2563eb; --green: #16a34a; --amber: #d97706; --red: #dc2626; --violet: #7c3aed;
 }
+/* Light theme — only surfaces/ink change; accent + status hues stay the same. */
+html[data-theme="light"] {
+  --bg: #f1f5f9; --panel: #ffffff; --panel2: #f8fafc; --panel3: #e2e8f0;
+  --text: #0f172a; --muted: #64748b; --border: #e2e8f0;
+}
 * { box-sizing: border-box; }
 body {
   margin: 0; background: var(--bg); color: var(--text);

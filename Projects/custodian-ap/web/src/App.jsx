@@ -23,6 +23,12 @@ export default function App() {
   const [error, setError] = useState('')
   const [toasts, setToasts] = useState([])
   const toastId = useRef(0)
+  const [theme, setTheme] = useState(() => localStorage.getItem('custodian-theme') || 'dark')
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    localStorage.setItem('custodian-theme', theme)
+  }, [theme])
 
   const pushToast = useCallback((msg, type = 'ok') => {
     const id = ++toastId.current
@@ -48,17 +54,29 @@ export default function App() {
 
   const onKey = (e) => { setKey(e.target.value); setApiKey(e.target.value) }
 
-  // Wrap an API call: refresh + success toast on success, error toast on failure.
-  const run = (fn, successMsg) => async (...args) => {
+  // Wrap an API call: refresh + toast on completion, error toast on failure.
+  // `msg` may be a string or a fn(result)->string. A rejected/failed outcome is
+  // toasted as "bad" so a duplicate/blocked submission is obvious.
+  const run = (fn, msg) => async (...args) => {
     try {
       const r = await fn(...args)
       await refresh()
-      if (successMsg) pushToast(successMsg, 'ok')
+      if (msg) {
+        const text = typeof msg === 'function' ? msg(r) : msg
+        const bad = r && (r.status === 'rejected' || r.status === 'failed')
+        pushToast(text, bad ? 'bad' : 'ok')
+      }
       return r
     } catch (e) {
       pushToast(String(e.message || e), 'bad')
       throw e
     }
+  }
+
+  // Human-readable outcome for a processed-invoice result.
+  const outcome = (r) => {
+    const dup = (r.policy_violations || []).some((v) => v.code === 'duplicate_invoice')
+    return `${r.invoice.invoice_id} → ${(r.status || '').replace('_', ' ')}${dup ? ' (duplicate)' : ''}`
   }
 
   const loadSamples = run(async () => {
@@ -74,6 +92,9 @@ export default function App() {
         <input style={{ maxWidth: 240 }} placeholder="API key (if auth on)" value={key} onChange={onKey} />
         <button className="ghost" onClick={loadSamples}>Load samples</button>
         <button className="ghost" onClick={refresh}>Refresh</button>
+        <button className="ghost" onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}>
+          {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
+        </button>
       </header>
 
       <main>
@@ -82,7 +103,7 @@ export default function App() {
         <StatsBar stats={stats} health={health} />
         <Charts records={invoices} />
         <div className="grid2">
-          <SubmitPanel onSubmit={run(api.submit, 'Invoice submitted')} onOcr={run(api.submitOcr, 'Invoice extracted & submitted')} />
+          <SubmitPanel onSubmit={run(api.submit, outcome)} onOcr={run(api.submitOcr, outcome)} />
           <Attention records={invoices} />
         </div>
         <InvoiceTable

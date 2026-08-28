@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Pipeline from './Pipeline.jsx'
 import { money, riskColor, statusLabel } from '../lib/format.js'
+import { downloadCsv } from '../lib/csv.js'
 
 function Detail({ rec, onApprove, onReject, onDelete }) {
   const id = rec.invoice.invoice_id
@@ -90,6 +91,8 @@ export default function InvoiceTable({ records, onApprove, onReject, onDelete })
           <select style={{ width: 'auto' }} value={status} onChange={(e) => setStatus(e.target.value)}>
             {STATUSES.map((s) => <option key={s} value={s}>{s === 'all' ? 'All statuses' : s.replace('_', ' ')}</option>)}
           </select>
+          <button className="ghost" disabled={records.length === 0}
+                  onClick={() => downloadCsv(records)} title="Export all as CSV">⬇ CSV</button>
         </div>
       </div>
       {records.length === 0 && <div className="empty">No invoices yet — submit one above.</div>}
