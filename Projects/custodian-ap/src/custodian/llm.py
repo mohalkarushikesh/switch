@@ -3,6 +3,14 @@
 Kept isolated so the rest of the app never imports litellm directly. If no
 provider key is configured, or the call/parse fails, this returns None and the
 caller falls back to heuristic scoring — so the pipeline always completes.
+
+Providers are selected by the model name's prefix (see Settings.llm_provider):
+
+    gpt-4o-mini                                  -> OpenAI    (OPENAI_API_KEY)
+    groq/llama-3.1-8b-instant                    -> Groq      (GROQ_API_KEY)
+    huggingface/meta-llama/Llama-3.1-8B-Instruct -> HF        (HUGGINGFACE_API_KEY)
+
+Set CUSTODIAN_LLM_API_BASE to put a LiteLLM proxy in front of any of them.
 """
 
 from __future__ import annotations
@@ -70,12 +78,15 @@ def score_invoice_with_llm(invoice: Invoice) -> dict | None:
         return None
 
     # Route through a LiteLLM proxy/gateway when configured, else call the
-    # provider directly using the environment's API keys.
+    # provider directly. The key is chosen by the model's provider prefix, so a
+    # "huggingface/*" model authenticates with the HF token rather than whatever
+    # other provider key happens to be in the environment.
     extra: dict = {}
     if settings.llm_api_base:
         extra["api_base"] = settings.llm_api_base
-    if settings.llm_api_key:
-        extra["api_key"] = settings.llm_api_key
+    api_key = settings.llm_api_key or settings.llm_api_credential
+    if api_key:
+        extra["api_key"] = api_key
 
     try:
         response = litellm.completion(

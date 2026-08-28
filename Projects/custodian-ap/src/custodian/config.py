@@ -24,6 +24,20 @@ def _get_int(name: str, default: int) -> int:
         return default
 
 
+def _get_bool(name: str, default: bool) -> bool:
+    """Read a boolean env var. Truthy: 1/true/yes/on (case-insensitive)."""
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+# Model-name prefixes LiteLLM uses to pick a provider. A model with no
+# recognised prefix is an OpenAI model ("gpt-4o-mini"). Keep in sync with
+# Settings.llm_api_credential, which maps each of these to its key field.
+_PROVIDER_PREFIXES = frozenset({"openai", "groq", "huggingface"})
+
+
 @dataclass(frozen=True)
 class Settings:
     # LLM
@@ -32,6 +46,8 @@ class Settings:
     groq_api_key: str | None
     llm_api_base: str | None   # set to route through a LiteLLM proxy/gateway
     llm_api_key: str | None    # proxy master key (when using llm_api_base)
+    huggingface_api_key: str | None   # HF Inference / Inference-Providers token
+    disable_llm: bool          # hard kill-switch: always use the heuristic scorer
 
     # Approval-routing thresholds
     auto_pay_max_risk: int
@@ -68,9 +84,35 @@ class Settings:
     mlflow_experiment: str
 
     @property
+    def llm_provider(self) -> str:
+        """Provider the configured model routes to.
+
+        LiteLLM names models "<provider>/<model>" for everything except OpenAI,
+        which is bare ("gpt-4o-mini"), so an unknown/absent prefix means OpenAI.
+        """
+        prefix, sep, _ = self.llm_model.partition("/")
+        return prefix if sep and prefix in _PROVIDER_PREFIXES else "openai"
+
+    @property
+    def llm_api_credential(self) -> str | None:
+        """The API key belonging to the configured model's provider, if set."""
+        return {
+            "openai": self.openai_api_key,
+            "groq": self.groq_api_key,
+            "huggingface": self.huggingface_api_key,
+        }.get(self.llm_provider)
+
+    @property
     def has_llm_credentials(self) -> bool:
-        """True if we can reach an LLM: a direct provider key or a proxy base URL."""
-        return bool(self.openai_api_key or self.groq_api_key or self.llm_api_base)
+        """True if we can reach an LLM: the provider's own key, or a proxy base URL.
+
+        Matching the key to the model's provider (rather than accepting any key)
+        keeps /health honest — an OpenAI key does not make a huggingface/* model
+        reachable, and claiming "llm" there would mislead the dashboard.
+        """
+        if self.disable_llm:
+            return False
+        return bool(self.llm_api_credential or self.llm_api_base)
 
 
 def load_settings() -> Settings:
@@ -81,6 +123,11 @@ def load_settings() -> Settings:
         groq_api_key=os.getenv("GROQ_API_KEY") or None,
         llm_api_base=os.getenv("CUSTODIAN_LLM_API_BASE") or None,
         llm_api_key=os.getenv("CUSTODIAN_LLM_API_KEY") or None,
+        # HF_TOKEN is the name the huggingface CLI writes, so accept either.
+        huggingface_api_key=(
+            os.getenv("HUGGINGFACE_API_KEY") or os.getenv("HF_TOKEN") or None
+        ),
+        disable_llm=_get_bool("CUSTODIAN_DISABLE_LLM", False),
         auto_pay_max_risk=_get_int("CUSTODIAN_AUTO_PAY_MAX_RISK", 30),
         auto_pay_max_amount=_get_int("CUSTODIAN_AUTO_PAY_MAX_AMOUNT", 5000),
         reject_min_risk=_get_int("CUSTODIAN_REJECT_MIN_RISK", 75),

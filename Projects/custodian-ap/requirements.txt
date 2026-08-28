@@ -1,5 +1,5 @@
 # Core dependencies for the Custodian MVP
-litellm>=1.40.0        # unified gateway to LLM providers (OpenAI, Groq, ...)
+litellm>=1.40.0        # unified gateway to LLM providers (OpenAI, Groq, Hugging Face)
 pydantic>=2.6.0        # typed data models & validation
 python-dotenv>=1.0.0   # load configuration from a .env file
 

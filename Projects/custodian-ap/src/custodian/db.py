@@ -157,3 +157,24 @@ class SqliteAuditLog:
     def read_all(self) -> list[dict]:
         rows = self.db.query("SELECT payload FROM audit_events ORDER BY id")
         return [json.loads(r["payload"]) for r in rows]
+
+    def read_events(self) -> list[dict]:
+        """read_all() plus each event's audit metadata, oldest first.
+
+        The recorded_at column is the only record of *when* a decision was
+        logged, and read_all() drops it — which makes an audit view unreadable.
+        Metadata is merged in alongside the ProcessedInvoice fields rather than
+        wrapped around them, so existing callers that index into e.g.
+        entry["invoice"]["invoice_id"] keep working unchanged.
+        """
+        rows = self.db.query(
+            "SELECT id, recorded_at, payload FROM audit_events ORDER BY id"
+        )
+        return [
+            {
+                **json.loads(r["payload"]),
+                "audit_id": r["id"],
+                "recorded_at": r["recorded_at"],
+            }
+            for r in rows
+        ]

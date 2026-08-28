@@ -55,7 +55,12 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     # Report which scoring path will be used, so the run is self-explanatory.
-    mode = "LLM (LiteLLM)" if settings.has_llm_credentials else "heuristic (no LLM key set)"
+    mode = (
+        f"LLM via LiteLLM ({settings.llm_provider})"
+        if settings.has_llm_credentials
+        else "heuristic (LLM disabled)" if settings.disable_llm
+        else f"heuristic (no {settings.llm_provider} key set)"
+    )
     print(f"Custodian — accounts-payable pipeline")
     print(f"Scoring mode: {mode} | model: {settings.llm_model}")
     print(f"Ledger starting balance: ₹{settings.ledger_balance:,.2f}\n")

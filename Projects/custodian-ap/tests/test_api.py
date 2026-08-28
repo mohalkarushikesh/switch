@@ -8,9 +8,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-# Deterministic, offline scoring.
+# Deterministic, offline scoring (conftest also sets CUSTODIAN_DISABLE_LLM).
 os.environ.pop("OPENAI_API_KEY", None)
 os.environ.pop("GROQ_API_KEY", None)
+os.environ.pop("HUGGINGFACE_API_KEY", None)
+os.environ.pop("HF_TOKEN", None)
 
 import pytest  # noqa: E402
 
@@ -39,7 +41,12 @@ def _clean_invoice(invoice_id: str = "API-001", amount: float = 1200.0) -> dict:
 def test_health_reports_heuristic_mode():
     resp = client.get("/health")
     assert resp.status_code == 200
-    assert resp.json()["scoring_mode"] == "heuristic"
+    body = resp.json()
+    assert body["scoring_mode"] == "heuristic"
+    # No provider is claimed when we're not actually calling an LLM, and the
+    # dashboard is told the kill-switch is why.
+    assert body["provider"] is None
+    assert body["llm_disabled"] is True
 
 
 def test_submit_clean_invoice_is_paid():
@@ -198,6 +205,30 @@ def test_audit_endpoint_returns_entries():
     body = resp.json()
     assert len(body["entries"]) >= 1
     assert any(e["invoice"]["invoice_id"] == "API-AUDIT" for e in body["entries"])
+
+
+def test_audit_entries_carry_timestamps():
+    """The audit view needs to show *when* each decision was recorded."""
+    client.post("/invoices", json=_clean_invoice("API-AUDIT-TS", 1600.0))
+    body = client.get("/audit").json()
+    entry = next(e for e in body["entries"] if e["invoice"]["invoice_id"] == "API-AUDIT-TS")
+    assert entry["recorded_at"]
+    assert isinstance(entry["audit_id"], int)
+
+
+def test_audit_limit_keeps_the_most_recent_events():
+    for i in range(3):
+        client.post("/invoices", json=_clean_invoice(f"API-AUDIT-LIM-{i}", 1700.0))
+    full = client.get("/audit").json()
+    limited = client.get("/audit?limit=2").json()
+
+    assert len(limited["entries"]) == 2
+    # total reports the full log size, not the truncated page.
+    assert limited["total"] == full["total"] > 2
+    # It's the tail that's kept (most recent), still in oldest-first order.
+    assert [e["audit_id"] for e in limited["entries"]] == [
+        e["audit_id"] for e in full["entries"][-2:]
+    ]
 
 
 def test_duplicate_submission_is_blocked_and_preserves_original():

@@ -118,7 +118,12 @@ _API_KEYS = _parse_api_keys(settings.api_keys)
 
 
 def require_role(*allowed: str):
-    """Build a dependency that authenticates the X-API-Key and checks its role."""
+    """Build a dependency that authenticates the X-API-Key and checks its role.
+
+    Called with no arguments it authenticates without scoping to a role — which
+    is what the read endpoints use: they aren't role-specific, but they must not
+    be anonymous when auth is on.
+    """
 
     def dependency(x_api_key: str | None = Header(default=None, alias="X-API-Key")) -> dict:
         if not _API_KEYS:                       # auth disabled — open
@@ -153,10 +158,16 @@ class InvoiceIn(BaseModel):
 @app.get("/health")
 def health() -> dict:
     """Liveness probe plus which scoring path is active."""
+    live = settings.has_llm_credentials
     return {
         "status": "ok",
-        "scoring_mode": "llm" if settings.has_llm_credentials else "heuristic",
+        "scoring_mode": "llm" if live else "heuristic",
         "model": settings.llm_model,
+        # Which provider the model routes to, and whether its key is present.
+        # The dashboard shows this so "why am I on heuristics?" is answerable
+        # without reading the server's environment.
+        "provider": settings.llm_provider if live else None,
+        "llm_disabled": settings.disable_llm,
         "ledger_balance": _ledger.balance,
     }
 
@@ -218,6 +229,7 @@ def list_invoices(
     status: str | None = None,
     min_risk: int | None = None,
     max_risk: int | None = None,
+    _=Depends(require_role()),
 ) -> list[ProcessedInvoice]:
     """List processed invoices, filterable by status and risk-score range."""
     records = _store.list(status=status)
@@ -229,7 +241,7 @@ def list_invoices(
 
 
 @app.get("/invoices/{invoice_id}", response_model=ProcessedInvoice)
-def get_invoice(invoice_id: str) -> ProcessedInvoice:
+def get_invoice(invoice_id: str, _=Depends(require_role())) -> ProcessedInvoice:
     """Fetch a single processed invoice by id."""
     record = _store.get(invoice_id)
     if record is None:
@@ -325,7 +337,7 @@ def delete_invoice(invoice_id: str, _=Depends(require_role("admin"))) -> dict:
 
 
 @app.get("/ledger")
-def get_ledger() -> dict:
+def get_ledger(_=Depends(require_role())) -> dict:
     """Return the current ledger balance and its recorded transactions."""
     return {
         "balance": _ledger.balance,
@@ -393,14 +405,25 @@ def policies() -> dict:
 
 
 @app.get("/audit")
-def audit() -> dict:
-    """Return the persisted audit log, if one is configured."""
+def audit(limit: int | None = None, _=Depends(require_role())) -> dict:
+    """Return the persisted audit log, if one is configured.
+
+    `limit` keeps the most recent N events — the log is append-only and every
+    entry carries a full invoice snapshot, so it grows without bound and the
+    dashboard should not have to pull all of it.
+    """
     if _audit_log is None:
         raise HTTPException(
             status_code=404,
             detail="No audit log configured (set CUSTODIAN_AUDIT_LOG).",
         )
-    return {"path": str(_audit_log.path), "entries": _audit_log.read_all()}
+    # SqliteAuditLog adds recorded_at/audit_id; the JSONL log has no timestamps.
+    read = getattr(_audit_log, "read_events", _audit_log.read_all)
+    entries = read()
+    total = len(entries)
+    if limit is not None and limit > 0:
+        entries = entries[-limit:]
+    return {"path": str(_audit_log.path), "total": total, "entries": entries}
 
 
 @app.get("/")

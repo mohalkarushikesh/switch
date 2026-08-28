@@ -87,3 +87,22 @@ def test_sqlite_audit_log_appends(tmp_path):
     entries = audit.read_all()
     assert len(entries) == 2
     assert {e["invoice"]["invoice_id"] for e in entries} == {"AUD-1", "AUD-2"}
+
+
+def test_read_events_adds_metadata_without_reshaping_entries(tmp_path):
+    """read_events() must stay a superset of read_all() so callers don't break."""
+    db = Database(tmp_path / "audit-events.db")
+    audit = SqliteAuditLog(db)
+    cust = Custodian(Ledger(balance=1_000_000), audit_log=audit)
+    cust.process(_invoice("EV-1", 1234.0))
+    cust.process(_invoice("EV-2", 2345.0))
+
+    events = audit.read_events()
+    assert len(events) == 2
+    # Ordered oldest-first, with the metadata the audit view needs.
+    assert [e["audit_id"] for e in events] == [1, 2]
+    assert all(e["recorded_at"] for e in events)
+    # The ProcessedInvoice fields are still addressable exactly as before.
+    assert [e["invoice"]["invoice_id"] for e in events] == ["EV-1", "EV-2"]
+    for event, plain in zip(events, audit.read_all()):
+        assert {k: v for k, v in event.items() if k not in ("audit_id", "recorded_at")} == plain

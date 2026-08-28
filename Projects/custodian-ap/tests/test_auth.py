@@ -82,10 +82,39 @@ def test_delete_requires_admin(auth_enabled):
     assert client.delete("/invoices/AUTH-DEL", headers={"X-API-Key": "sk-admin"}).status_code == 200
 
 
-def test_reads_stay_open_when_auth_enabled(auth_enabled):
-    # GET endpoints are intentionally not protected in this MVP.
-    assert client.get("/invoices").status_code == 200
-    assert client.get("/health").status_code == 200
+# Reads that expose invoice or vendor data. /audit and /ledger return full
+# invoice snapshots including vendor account numbers, so anonymous access to
+# them would leak the entire AP history.
+_PROTECTED_READS = ("/invoices", "/invoices/AUTH-READ", "/ledger", "/audit")
+
+# Liveness and scrape endpoints stay open: /health is a probe, and Prometheus
+# scrapes /metrics without credentials. Neither carries vendor data.
+_OPEN_READS = ("/health", "/metrics")
+
+
+@pytest.mark.parametrize("path", _PROTECTED_READS)
+def test_sensitive_reads_require_a_key_when_auth_enabled(auth_enabled, path):
+    assert client.get(path).status_code == 401
+
+
+@pytest.mark.parametrize("path", _PROTECTED_READS)
+def test_sensitive_reads_accept_any_valid_key(auth_enabled, path):
+    # Seed the single-invoice path so it's a 200 rather than a 404.
+    client.post("/invoices", json=_invoice("AUTH-READ"), headers={"X-API-Key": "sk-admin"})
+    # Reads aren't role-scoped — the lowest-privilege key is enough.
+    assert client.get(path, headers={"X-API-Key": "sk-sub"}).status_code == 200
+
+
+@pytest.mark.parametrize("path", _OPEN_READS)
+def test_probe_endpoints_stay_open_when_auth_enabled(auth_enabled, path):
+    assert client.get(path).status_code == 200
+
+
+@pytest.mark.parametrize("path", _PROTECTED_READS + _OPEN_READS)
+def test_all_reads_open_when_auth_disabled(path):
+    # No fixture -> _API_KEYS empty -> the local demo stays frictionless.
+    client.post("/invoices", json=_invoice("AUTH-READ"))
+    assert client.get(path).status_code == 200
 
 
 def test_auth_disabled_by_default():

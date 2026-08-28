@@ -1,0 +1,63 @@
+name: custodian-ap CI
+
+# Scoped to this project's paths: the repository holds several unrelated
+# projects, so a change under another one must not trigger this workflow.
+on:
+  push:
+    branches: [main]
+    paths: ['Projects/custodian-ap/**', '.github/workflows/ci.yml']
+  pull_request:
+    paths: ['Projects/custodian-ap/**', '.github/workflows/ci.yml']
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: Projects/custodian-ap
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: src
+      # Belt-and-braces: conftest.py sets this too, but making it explicit means
+      # CI can never reach a real LLM provider even if that changes.
+      CUSTODIAN_DISABLE_LLM: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: Projects/custodian-ap/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        # The Presidio suite stays opt-in (CUSTODIAN_TEST_PRESIDIO): it needs a
+        # spaCy model download, which would make CI depend on the network.
+        run: python -m pytest tests/ -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: Projects/custodian-ap/web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: Projects/custodian-ap/web
+        run: npm ci
+
+      - name: Run component tests
+        working-directory: Projects/custodian-ap/web
+        run: npm test
+
+      - name: Verify the production build
+        working-directory: Projects/custodian-ap/web
+        run: npm run build
