@@ -36,6 +36,16 @@ app = FastAPI(
     description="Governed multi-agent pipeline: ingest → risk → approval → auto-pay.",
 )
 
+@app.middleware("http")
+async def no_cache_html(request, call_next):
+    """Prevent the SPA/dashboard HTML from being cached, so a rebuilt UI always
+    loads fresh (hashed JS/CSS may still cache). Fixes 'my changes don't show'."""
+    response = await call_next(request)
+    if "text/html" in response.headers.get("content-type", ""):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return response
+
+
 # Static dashboards: the zero-build one at /ui, and the built React app at /app.
 _UI_DIR = Path(__file__).resolve().parents[2] / "ui"
 _WEB_DIST = Path(__file__).resolve().parents[2] / "web" / "dist"
@@ -284,6 +294,16 @@ def reject_invoice(invoice_id: str, _=Depends(require_role("reviewer"))) -> Proc
     _store.save(record)
     _audit_log.record(record)
     return record
+
+
+@app.delete("/invoices")
+def delete_all_invoices(_=Depends(require_role("admin"))) -> dict:
+    """Delete ALL processed invoices and reset the ledger (admin only)."""
+    count = len(_store.list())
+    _store.clear()
+    _ledger.balance = settings.ledger_balance
+    _ledger.transactions.clear()
+    return {"deleted": count}
 
 
 @app.delete("/invoices/{invoice_id}")

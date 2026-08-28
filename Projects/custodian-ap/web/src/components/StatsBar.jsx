@@ -28,7 +28,11 @@ export default function StatsBar({ stats, health }) {
       </div>
       <div className="row" style={{ marginTop: 12 }}>
         <span className="pill">Scoring: <b>{health?.scoring_mode ?? '…'}</b></span>
-        <span className="pill">Model: <b>{health?.model ?? '…'}</b></span>
+        {/* Only show the LLM model when actually scoring via an LLM; otherwise
+            the rules engine is what's running (so "gpt-4o-mini" isn't misleading). */}
+        {health?.scoring_mode === 'llm'
+          ? <span className="pill">Model: <b>{health.model}</b></span>
+          : <span className="pill" title="Set OPENAI_API_KEY/GROQ_API_KEY to use an LLM">Engine: <b>heuristic rules</b></span>}
         <span className="pill">Total auto-paid: <b>{money(stats?.total_paid)}</b></span>
       </div>
     </div>

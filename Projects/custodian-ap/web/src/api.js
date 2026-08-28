@@ -17,10 +17,25 @@ async function req(method, path, body) {
   const text = await resp.text()
   const data = text ? JSON.parse(text) : null
   if (!resp.ok) {
-    const detail = data && data.detail ? data.detail : resp.statusText
-    throw new Error(`${resp.status}: ${detail}`)
+    throw new Error(`${resp.status}: ${formatDetail(data, resp.statusText)}`)
   }
   return data
+}
+
+// FastAPI returns validation errors as an array of {loc, msg, type} objects;
+// render them readably instead of "[object Object]".
+function formatDetail(data, fallback) {
+  const detail = data && data.detail !== undefined ? data.detail : fallback
+  if (Array.isArray(detail)) {
+    return detail
+      .map((e) => {
+        const field = Array.isArray(e.loc) ? e.loc.slice(1).join('.') : ''
+        return field ? `${field}: ${e.msg}` : e.msg
+      })
+      .join('; ')
+  }
+  if (detail && typeof detail === 'object') return JSON.stringify(detail)
+  return String(detail)
 }
 
 export const api = {
@@ -35,4 +50,5 @@ export const api = {
   approve: (id) => req('POST', `/invoices/${id}/approve`),
   reject: (id) => req('POST', `/invoices/${id}/reject`),
   remove: (id) => req('DELETE', `/invoices/${id}`),
+  removeAll: () => req('DELETE', '/invoices'),
 }

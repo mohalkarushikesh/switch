@@ -118,6 +118,10 @@ class SqliteStore:
         """Remove a processed invoice (no-op if it doesn't exist)."""
         self.db.execute("DELETE FROM processed_invoices WHERE invoice_id = ?", (invoice_id,))
 
+    def clear(self) -> None:
+        """Remove all processed invoices."""
+        self.db.execute("DELETE FROM processed_invoices")
+
     def list(self, status: str | None = None) -> list[ProcessedInvoice]:
         # Newest first. rowid is the insertion-order tiebreaker for records that
         # share a (second-resolution) created_at timestamp.

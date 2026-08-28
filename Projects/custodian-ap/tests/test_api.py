@@ -210,3 +210,17 @@ def test_duplicate_submission_is_blocked_and_preserves_original():
     assert any(v["code"] == "duplicate_invoice" for v in second.json()["policy_violations"])
     # ...and the stored record still reflects the original paid state.
     assert client.get("/invoices/API-DUP").json()["status"] == "paid"
+
+
+# NOTE: keep this LAST — it wipes the shared in-memory store/ledger.
+def test_delete_all_clears_and_resets_ledger():
+    client.post("/invoices", json=_clean_invoice("DA-1", 1000.0))
+    client.post("/invoices", json=_clean_invoice("DA-2", 2000.0))
+    assert len(client.get("/invoices").json()) >= 2
+
+    resp = client.delete("/invoices")
+    assert resp.status_code == 200
+    assert resp.json()["deleted"] >= 2
+
+    assert client.get("/invoices").json() == []
+    assert client.get("/ledger").json()["balance"] == 1_000_000  # reset to start

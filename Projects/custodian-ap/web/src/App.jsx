@@ -83,6 +83,13 @@ export default function App() {
     for (const s of SAMPLES) { try { await api.submit(s) } catch { /* dup/auth */ } }
   }, 'Sample invoices loaded')
 
+  const deleteAll = () => {
+    if (invoices.length === 0) return
+    if (window.confirm(`Delete all ${invoices.length} invoices and reset the ledger? This cannot be undone.`)) {
+      run(api.removeAll, 'All invoices deleted')()
+    }
+  }
+
   return (
     <>
       <header>
@@ -92,6 +99,8 @@ export default function App() {
         <input style={{ maxWidth: 240 }} placeholder="API key (if auth on)" value={key} onChange={onKey} />
         <button className="ghost" onClick={loadSamples}>Load samples</button>
         <button className="ghost" onClick={refresh}>Refresh</button>
+        <button className="bad" onClick={deleteAll} disabled={invoices.length === 0}
+                title="Delete all invoices (admin)">Delete all</button>
         <button className="ghost" onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}>
           {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
         </button>
