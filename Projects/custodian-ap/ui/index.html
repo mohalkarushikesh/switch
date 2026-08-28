@@ -136,7 +136,8 @@
         fetch('/health').then(r => r.json()),
         fetch('/ledger').then(r => r.json()),
       ]);
-      $('mode').textContent = h.scoring_mode;
+      // Name the provider when an LLM is live, so "llm (huggingface)" is visible.
+      $('mode').textContent = h.provider ? `${h.scoring_mode} (${h.provider})` : h.scoring_mode;
       $('model').textContent = h.model;
       $('ledger').textContent = money(l.balance);
     }

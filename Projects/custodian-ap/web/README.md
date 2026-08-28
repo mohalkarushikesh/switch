@@ -1,8 +1,19 @@
 # Custodian Web App
 
-React (Vite) front-end for the Custodian API. Governance overview, per-invoice
-pipeline visualization, risk/PII/policy breakdown, OCR + form submission, stats,
-a "needs attention" feed, and the approve/reject review queue.
+React (Vite) front-end for the Custodian API — a five-section console:
+
+| Route          | Section       | Backed by                                        |
+| -------------- | ------------- | ------------------------------------------------ |
+| `#/dashboard`  | Dashboard     | `/health` `/stats` `/invoices` — overview, charts, submission, invoice table |
+| `#/queue`      | Review queue  | `/invoices` — human-review workspace with bulk approve/reject |
+| `#/ledger`     | Ledger        | `/ledger` — balance + transaction history        |
+| `#/governance` | Governance    | `/policies` — risk-band ruler, hard limits, denylist, the six layers |
+| `#/audit`      | Audit         | `/audit?limit=200` — timestamped decision log    |
+
+Routing is hash-based on purpose: the bundle is served as static files from
+FastAPI at `/app`, so a deep path like `/app/ledger` would 404 on reload while
+`#/ledger` always resolves. Auto-refresh polls every 8s (pausable via the header
+toggle) and only fetches the open section's extra endpoint.
 
 > Note: it's `npm run build` / `npm run dev` — npm has no bare `build`/`dev`
 > command; custom scripts always go through `npm run`.

@@ -1,5 +1,5 @@
 // Tiny API client for the Custodian backend. Attaches the API key (if the user
-// entered one) as X-API-Key on write requests, so it works whether or not the
+// entered one) as X-API-Key on every request, so it works whether or not the
 // backend has auth enabled.
 
 let apiKey = ''
@@ -8,7 +8,10 @@ export const setApiKey = (k) => { apiKey = k || '' }
 async function req(method, path, body) {
   const headers = {}
   if (body !== undefined) headers['Content-Type'] = 'application/json'
-  if (apiKey && method !== 'GET') headers['X-API-Key'] = apiKey
+  // Sent on reads too, not just writes: /invoices, /ledger and /audit now
+  // require a key when the backend has auth enabled, because they return full
+  // invoice snapshots including vendor account numbers.
+  if (apiKey) headers['X-API-Key'] = apiKey
   const resp = await fetch(path, {
     method,
     headers,
@@ -43,9 +46,11 @@ export const api = {
   stats: () => req('GET', '/stats'),
   ledger: () => req('GET', '/ledger'),
   policies: () => req('GET', '/policies'),
+  audit: (limit) => req('GET', limit ? `/audit?limit=${limit}` : '/audit'),
   listInvoices: () => req('GET', '/invoices'),
   getInvoice: (id) => req('GET', `/invoices/${id}`),
   submit: (invoice) => req('POST', '/invoices', invoice),
+  submitBatch: (invoices) => req('POST', '/invoices/batch', invoices),
   submitOcr: (text) => req('POST', '/invoices/ocr', { text }),
   approve: (id) => req('POST', `/invoices/${id}/approve`),
   reject: (id) => req('POST', `/invoices/${id}/reject`),

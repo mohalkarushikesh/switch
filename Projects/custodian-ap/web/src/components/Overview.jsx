@@ -1,6 +1,8 @@
 // Explanatory landing panel — what Custodian is + the six governance layers.
 
-const LAYERS = [
+// Exported so the Governance view can render the same six layers without
+// duplicating the copy.
+export const LAYERS = [
   ['Identity', 'Who is acting, and are they allowed? (API keys / roles here; Keycloak + SPIRE in the full stack)'],
   ['Data', 'PII is scrubbed from invoice text before it reaches an LLM'],
   ['Model', 'LLM calls are gated & routed through one gateway (LiteLLM)'],

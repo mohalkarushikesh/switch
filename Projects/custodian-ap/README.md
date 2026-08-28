@@ -86,7 +86,7 @@ console UI and backed by supporting services (control plane, ledger, OCR/data se
 | **Identity**       | Keycloak, SPIRE                                    |
 | **Secrets**        | Infisical                                          |
 | **Data / Privacy** | OpenMetadata, Presidio                             |
-| **LLM Gateway**    | LiteLLM (OpenAI + Groq)                            |
+| **LLM Gateway**    | LiteLLM (OpenAI + Groq + Hugging Face)             |
 | **ML / Tracking**  | MLflow                                             |
 | **Observability**  | Langfuse, Prometheus, Grafana                      |
 | **Runtime**        | Docker / Docker Compose                            |
@@ -105,21 +105,37 @@ console UI and backed by supporting services (control plane, ledger, OCR/data se
 The runnable slice of the platform:
 
 - **Agent pipeline** — ingest → risk/fraud scoring → approval routing → auto-pay, over a mock ledger.
-- **Real LLM scoring** via LiteLLM (OpenAI/Groq), with a transparent heuristic fallback so it runs
-  with **no API keys**.
+- **Real LLM scoring** via LiteLLM (OpenAI / Groq / **Hugging Face**), with a transparent heuristic
+  fallback so it runs with **no API keys**. The provider is selected by the model name's prefix, and
+  `CUSTODIAN_DISABLE_LLM=1` is a hard kill-switch that forces the heuristic path.
 - **Three governance layers** — Data (PII redaction before anything reaches the LLM), Policy (hard
   rules that can override risk-based decisions, including duplicate-invoice blocking), and Audit
   (append-only log of every decision).
 - **SQLite persistence** — processed invoices and the audit trail survive restarts; the ledger
   balance is reconstructed from paid invoices on startup.
 - **REST API** (FastAPI) with **two dashboards**: a zero-build single-file console at `/ui`, and a
-  richer **React (Vite) app** at `/app` — governance overview, pipeline visualization, risk
-  breakdown, OCR submission, stats, a "needs attention" feed, and the review queue.
+  richer **React (Vite) app** at `/app`. The React app is a five-section console with hash routing
+  (`#/dashboard`, `#/queue`, `#/ledger`, `#/governance`, `#/audit`):
+  - **Dashboard** — governance overview, stat tiles, status donut + risk bands, OCR/form submission,
+    "needs attention" feed, and the full invoice table with per-row pipeline viz and detail drawer.
+  - **Review queue** — every invoice routed to a human, highest-risk first, with multi-select
+    **bulk approve/reject**.
+  - **Ledger** — balance, derived opening balance, total disbursed, and searchable transactions.
+  - **Governance** — the active policy thresholds rendered as a proportional risk-band ruler
+    (auto-pay / human review / auto-reject), hard limits, vendor denylist, and the six layers.
+  - **Audit** — the append-only decision log with timestamps, search, and expandable per-event trails.
+
+  Auto-refresh polls every 8s and can be **paused**; only the open section's endpoint is polled.
 - **Prometheus `/metrics`** endpoint for the observability layer.
+- **CI** — GitHub Actions runs both suites (95 backend + 33 frontend) and verifies the production
+  build on every push/PR touching this project. Defined at the repository root in
+  `.github/workflows/custodian-ap-ci.yml` and path-filtered to `Projects/custodian-ap/**`.
 - **PII backend is pluggable** — dependency-free regex by default, or Microsoft **Presidio**
   (`CUSTODIAN_PII_BACKEND=presidio`), which degrades back to regex if unavailable.
 - **API-key authentication with roles** — submitter / reviewer / admin on the state-changing
-  endpoints (`CUSTODIAN_API_KEYS`); off by default, reads stay open.
+  endpoints (`CUSTODIAN_API_KEYS`); off by default. When enabled, reads that expose invoice or
+  vendor data (`/invoices`, `/ledger`, `/audit`) also require a key — any role will do — while
+  `/health` and `/metrics` stay open for probes and Prometheus scrapes.
 - **OCR ingest** — parse OCR-style invoice text into structured invoices (`POST /invoices/ocr`).
 - **Notifications** — rejected or high-risk invoices fire a webhook and/or JSONL log entry.
 - **MLflow model tracking** — each risk-scoring decision (model, source, score, amount) logged to
@@ -168,9 +184,11 @@ docker compose -f docker-compose.infra.yml up --build
 #    Keycloak http://localhost:8080 · Langfuse http://localhost:3001
 #    Prometheus http://localhost:9090 · Grafana http://localhost:3002
 
-# Run the backend tests (58 pass + 1 skipped without the Presidio model; offline, in-memory DB)
+# Run the backend tests (95 pass; offline, in-memory DB, no network)
 python -m pytest tests/ -q
-# Frontend tests:  cd web && npm test   (5 component tests)
+# The Presidio suite is opt-in (importing spaCy hangs where model downloads are blocked):
+CUSTODIAN_TEST_PRESIDIO=1 python -m pytest tests/ -q
+# Frontend tests:  cd web && npm test   (33 component tests)
 ```
 
 > **PowerShell (Windows):** the `PYTHONPATH=src <cmd>` prefix is bash syntax. In PowerShell set
@@ -181,11 +199,43 @@ python -m pytest tests/ -q
 > $env:PYTHONPATH="src"; uvicorn custodian.api:app --reload
 > ```
 
+### Choosing an LLM provider
+
+Risk scoring routes through LiteLLM. **The model name's prefix selects both the provider and which
+API key is used** — a bare name means OpenAI:
+
+| `CUSTODIAN_LLM_MODEL`                          | Provider     | Key it reads           |
+| ---------------------------------------------- | ------------ | ---------------------- |
+| `gpt-4o-mini`                                  | OpenAI       | `OPENAI_API_KEY`       |
+| `groq/llama-3.1-8b-instant`                    | Groq         | `GROQ_API_KEY`         |
+| `huggingface/meta-llama/Llama-3.1-8B-Instruct` | Hugging Face | `HUGGINGFACE_API_KEY`  |
+
+`HF_TOKEN` is accepted as an alias for `HUGGINGFACE_API_KEY` (it's what `huggingface-cli login`
+writes). With LiteLLM ≥ 1.60 an HF model may need an explicit inference provider in the name, e.g.
+`huggingface/hf-inference/meta-llama/Llama-3.1-8B-Instruct`.
+
+The key must belong to the model's provider: an `OPENAI_API_KEY` does **not** make a
+`huggingface/*` model reachable. When the matching key is absent, `/health` reports
+`scoring_mode: "heuristic"` and the dashboard says why, rather than claiming an LLM is live.
+
+```bash
+# Hugging Face, in .env (gitignored — never commit real keys)
+HUGGINGFACE_API_KEY=hf_...
+CUSTODIAN_LLM_MODEL=huggingface/meta-llama/Llama-3.1-8B-Instruct
+```
+
+Set `CUSTODIAN_DISABLE_LLM=1` to force heuristic scoring and make **no outbound LLM calls at all**,
+even when a key is present — a kill-switch for restricted networks and CI. The test suite sets it
+unconditionally, so `pytest` never touches the network even if your `.env` holds a live key.
+
 ### API endpoints
 
-Write endpoints (POST) accept an `X-API-Key` header when auth is enabled
-(`CUSTODIAN_API_KEYS`); submit requires the `submitter` role, approve/reject require
-`reviewer` (`admin` may do anything). Reads are open.
+All endpoints accept an `X-API-Key` header when auth is enabled (`CUSTODIAN_API_KEYS`).
+Submit requires the `submitter` role, approve/reject require `reviewer`, delete requires
+`admin` (`admin` may do anything). Reads marked 🔒 below require **any** valid key — they
+return full invoice snapshots including vendor account numbers, so anonymous access would
+expose the whole AP history. `/health` and `/metrics` are always open. With no keys
+configured, auth is disabled and everything is open (the default for local demos).
 
 | Method | Path                          | Purpose                                        |
 | ------ | ----------------------------- | ---------------------------------------------- |
@@ -193,15 +243,15 @@ Write endpoints (POST) accept an `X-API-Key` header when auth is enabled
 | POST   | `/invoices`                   | Submit one invoice through the pipeline        |
 | POST   | `/invoices/ocr`               | Submit OCR-style invoice text (parsed → pipeline) |
 | POST   | `/invoices/batch`             | Submit many invoices                           |
-| GET    | `/invoices`                   | List (filter by `status`, `min_risk`, `max_risk`) |
-| GET    | `/invoices/{id}`              | Fetch one processed invoice                    |
+| GET 🔒 | `/invoices`                   | List (filter by `status`, `min_risk`, `max_risk`) |
+| GET 🔒 | `/invoices/{id}`              | Fetch one processed invoice                    |
 | POST   | `/invoices/{id}/approve`      | Reviewer approves a queued invoice → pays it   |
 | POST   | `/invoices/{id}/reject`       | Reviewer rejects a queued invoice              |
 | DELETE | `/invoices/{id}`              | Delete an invoice (admin); refunds ledger if it was paid |
-| GET    | `/ledger`                     | Ledger balance + transactions                  |
+| GET 🔒 | `/ledger`                     | Ledger balance + transactions                  |
 | GET    | `/stats`                      | Aggregate counts + totals                      |
 | GET    | `/policies`                   | Active policy-governance configuration         |
-| GET    | `/audit`                      | Persisted audit log entries (SQLite-backed)    |
+| GET 🔒 | `/audit`                      | Persisted audit log entries (SQLite-backed); `?limit=N` keeps the N most recent |
 | GET    | `/metrics`                    | Prometheus metrics for the observability stack |
 
 ## What You Will Learn
@@ -227,6 +277,15 @@ developed in (a locked-down corporate Windows machine), not by the code:
 - **Presidio PII backend** works, but the `en_core_web_sm` spaCy model download is firewall-blocked,
   so that path can't execute here; it **degrades gracefully to regex** (verified). Install the model
   on an unrestricted network to enable it.
+- **`tests/test_pii_presidio.py` is opt-in.** `presidio_analyzer` and `spacy` are installed here, so
+  the module no longer short-circuits via `importorskip`; importing spaCy *stalls* against the
+  blocked, TLS-inspected network rather than failing fast, which hung the whole suite. `conftest.py`
+  now drops it from collection unless `CUSTODIAN_TEST_PRESIDIO=1` is set — a marker can't fix this,
+  since deselection happens after collection and collection is what triggers the import.
+- **Hugging Face scoring** is implemented and unit-tested against a stubbed LiteLLM, but **no live
+  HF call has been made from this machine** — `huggingface.co` is firewall-blocked. The provider
+  wiring, key selection, and graceful-degradation paths are verified offline; the round-trip to a
+  real HF endpoint still needs a run on an unrestricted network.
 - **MLflow** tracking is verified against a **local file store**; the `docker-compose.infra.yml`
   MLflow *server* is unrun config.
 - **Real LLM scoring** needs an API key; without one the **heuristic** scorer is used (fully
@@ -257,9 +316,26 @@ BankPayeeAgent/
 │   └── index.html                # zero-build console dashboard (served at /ui/)
 ├── web/                          # React (Vite) app — served at /app/ after `npm run build`
 │   └── src/
-│       ├── App.jsx               # layout, data loading, polling
+│       ├── App.jsx               # nav shell, routing, data loading, polling
 │       ├── api.js                # backend client (attaches X-API-Key on writes)
-│       └── components/           # Overview, StatsBar, SubmitPanel, Pipeline, InvoiceTable, Attention
+│       ├── lib/
+│       │   ├── useHashRoute.js   # dependency-free hash router (#/dashboard, #/ledger, …)
+│       │   ├── format.js         # money / risk-colour / status helpers
+│       │   └── csv.js            # client-side CSV export
+│       └── components/
+│           ├── Nav.jsx           # section nav (sidebar → tab strip under 820px)
+│           ├── Overview.jsx      # what-is-Custodian panel + the six layers (exports LAYERS)
+│           ├── StatsBar.jsx      # stat tiles + scoring provider/model pills
+│           ├── Charts.jsx        # status donut + risk-band bars (inline SVG, no chart lib)
+│           ├── SubmitPanel.jsx   # form / OCR-text submission
+│           ├── InvoiceTable.jsx  # invoice list + pipeline viz + detail drawer
+│           ├── Attention.jsx     # rejected / high-risk feed
+│           ├── ReviewQueue.jsx   # human-review workspace, bulk approve/reject
+│           ├── LedgerView.jsx    # GET /ledger — balance + transactions
+│           ├── Governance.jsx    # GET /policies — risk-band ruler + hard limits
+│           ├── Audit.jsx         # GET /audit — timestamped decision log
+│           ├── Pipeline.jsx      # per-invoice stage dots
+│           └── Toasts.jsx        # transient notifications
 ├── src/
 │   └── custodian/
 │       ├── config.py             # settings loaded from env / .env
