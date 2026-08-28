@@ -9,6 +9,7 @@ Providers are selected by the model name's prefix (see Settings.llm_provider):
     gpt-4o-mini                                  -> OpenAI    (OPENAI_API_KEY)
     groq/llama-3.1-8b-instant                    -> Groq      (GROQ_API_KEY)
     huggingface/meta-llama/Llama-3.1-8B-Instruct -> HF        (HUGGINGFACE_API_KEY)
+    anthropic/claude-opus-4-8                    -> Anthropic (ANTHROPIC_API_KEY)
 
 Set CUSTODIAN_LLM_API_BASE to put a LiteLLM proxy in front of any of them.
 """
@@ -87,6 +88,12 @@ def score_invoice_with_llm(invoice: Invoice) -> dict | None:
     api_key = settings.llm_api_key or settings.llm_api_credential
     if api_key:
         extra["api_key"] = api_key
+    if settings.llm_provider == "anthropic":
+        # Anthropic's Messages API requires max_tokens and rejects `temperature`
+        # (a 400 on claude-opus-4-8 and newer); the scoring reply is small JSON.
+        extra["max_tokens"] = 1024
+    else:
+        extra["temperature"] = 0  # deterministic scoring
 
     try:
         response = litellm.completion(
@@ -95,7 +102,6 @@ def score_invoice_with_llm(invoice: Invoice) -> dict | None:
                 {"role": "system", "content": _SYSTEM_PROMPT},
                 {"role": "user", "content": _build_user_prompt(invoice)},
             ],
-            temperature=0,  # deterministic scoring
             **extra,
         )
         content = response.choices[0].message.content or ""

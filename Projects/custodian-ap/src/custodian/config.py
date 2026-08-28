@@ -35,7 +35,7 @@ def _get_bool(name: str, default: bool) -> bool:
 # Model-name prefixes LiteLLM uses to pick a provider. A model with no
 # recognised prefix is an OpenAI model ("gpt-4o-mini"). Keep in sync with
 # Settings.llm_api_credential, which maps each of these to its key field.
-_PROVIDER_PREFIXES = frozenset({"openai", "groq", "huggingface"})
+_PROVIDER_PREFIXES = frozenset({"openai", "groq", "huggingface", "anthropic"})
 
 
 @dataclass(frozen=True)
@@ -47,6 +47,7 @@ class Settings:
     llm_api_base: str | None   # set to route through a LiteLLM proxy/gateway
     llm_api_key: str | None    # proxy master key (when using llm_api_base)
     huggingface_api_key: str | None   # HF Inference / Inference-Providers token
+    anthropic_api_key: str | None     # Anthropic API key (claude-* via LiteLLM)
     disable_llm: bool          # hard kill-switch: always use the heuristic scorer
 
     # Approval-routing thresholds
@@ -100,6 +101,7 @@ class Settings:
             "openai": self.openai_api_key,
             "groq": self.groq_api_key,
             "huggingface": self.huggingface_api_key,
+            "anthropic": self.anthropic_api_key,
         }.get(self.llm_provider)
 
     @property
@@ -127,6 +129,7 @@ def load_settings() -> Settings:
         huggingface_api_key=(
             os.getenv("HUGGINGFACE_API_KEY") or os.getenv("HF_TOKEN") or None
         ),
+        anthropic_api_key=os.getenv("ANTHROPIC_API_KEY") or None,
         disable_llm=_get_bool("CUSTODIAN_DISABLE_LLM", False),
         auto_pay_max_risk=_get_int("CUSTODIAN_AUTO_PAY_MAX_RISK", 30),
         auto_pay_max_amount=_get_int("CUSTODIAN_AUTO_PAY_MAX_AMOUNT", 5000),

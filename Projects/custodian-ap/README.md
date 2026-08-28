@@ -86,7 +86,7 @@ console UI and backed by supporting services (control plane, ledger, OCR/data se
 | **Identity**       | Keycloak, SPIRE                                    |
 | **Secrets**        | Infisical                                          |
 | **Data / Privacy** | OpenMetadata, Presidio                             |
-| **LLM Gateway**    | LiteLLM (OpenAI + Groq + Hugging Face)             |
+| **LLM Gateway**    | LiteLLM (OpenAI + Groq + Hugging Face + Anthropic) |
 | **ML / Tracking**  | MLflow                                             |
 | **Observability**  | Langfuse, Prometheus, Grafana                      |
 | **Runtime**        | Docker / Docker Compose                            |
@@ -105,7 +105,7 @@ console UI and backed by supporting services (control plane, ledger, OCR/data se
 The runnable slice of the platform:
 
 - **Agent pipeline** — ingest → risk/fraud scoring → approval routing → auto-pay, over a mock ledger.
-- **Real LLM scoring** via LiteLLM (OpenAI / Groq / **Hugging Face**), with a transparent heuristic
+- **Real LLM scoring** via LiteLLM (OpenAI / Groq / **Hugging Face** / **Anthropic**), with a transparent heuristic
   fallback so it runs with **no API keys**. The provider is selected by the model name's prefix, and
   `CUSTODIAN_DISABLE_LLM=1` is a hard kill-switch that forces the heuristic path.
 - **Three governance layers** — Data (PII redaction before anything reaches the LLM), Policy (hard
@@ -209,6 +209,7 @@ API key is used** — a bare name means OpenAI:
 | `gpt-4o-mini`                                  | OpenAI       | `OPENAI_API_KEY`       |
 | `groq/llama-3.1-8b-instant`                    | Groq         | `GROQ_API_KEY`         |
 | `huggingface/meta-llama/Llama-3.1-8B-Instruct` | Hugging Face | `HUGGINGFACE_API_KEY`  |
+| `anthropic/claude-opus-4-8`                    | Anthropic    | `ANTHROPIC_API_KEY`    |
 
 `HF_TOKEN` is accepted as an alias for `HUGGINGFACE_API_KEY` (it's what `huggingface-cli login`
 writes). With LiteLLM ≥ 1.60 an HF model may need an explicit inference provider in the name, e.g.

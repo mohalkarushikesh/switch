@@ -17,6 +17,11 @@ model_list:
       model: huggingface/meta-llama/Llama-3.1-8B-Instruct
       api_key: os.environ/HUGGINGFACE_API_KEY
 
+  - model_name: anthropic/claude-opus-4-8
+    litellm_params:
+      model: anthropic/claude-opus-4-8
+      api_key: os.environ/ANTHROPIC_API_KEY
+
 litellm_settings:
   drop_params: true          # silently drop params a given provider doesn't support
   request_timeout: 60

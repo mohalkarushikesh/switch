@@ -24,6 +24,7 @@ _CREDENTIAL_VARS = (
     "GROQ_API_KEY",
     "HUGGINGFACE_API_KEY",
     "HF_TOKEN",
+    "ANTHROPIC_API_KEY",
     "CUSTODIAN_LLM_API_BASE",
     "CUSTODIAN_LLM_API_KEY",
     "CUSTODIAN_DISABLE_LLM",
@@ -62,6 +63,7 @@ def invoice() -> Invoice:
         ("groq/llama-3.1-8b-instant", "groq"),
         ("huggingface/meta-llama/Llama-3.1-8B-Instruct", "huggingface"),
         ("huggingface/hf-inference/mistralai/Mistral-7B-Instruct-v0.3", "huggingface"),
+        ("anthropic/claude-opus-4-8", "anthropic"),
         ("meta-llama/Llama-3.1-8B-Instruct", "openai"),             # unknown prefix
     ],
 )
@@ -79,6 +81,17 @@ def test_hf_token_is_picked_up_from_either_env_var(monkeypatch):
     fallback = settings_with(monkeypatch, CUSTODIAN_LLM_MODEL=model, HF_TOKEN="hf_bbb")
     assert fallback.llm_api_credential == "hf_bbb"
     assert fallback.has_llm_credentials is True
+
+
+def test_anthropic_key_is_picked_up_and_matches_its_model(monkeypatch):
+    s = settings_with(
+        monkeypatch,
+        CUSTODIAN_LLM_MODEL="anthropic/claude-opus-4-8",
+        ANTHROPIC_API_KEY="sk-ant-xxx",
+    )
+    assert s.llm_provider == "anthropic"
+    assert s.llm_api_credential == "sk-ant-xxx"
+    assert s.has_llm_credentials is True
 
 
 def test_credential_must_match_the_models_provider(monkeypatch):
@@ -196,6 +209,26 @@ def test_gateway_key_wins_over_the_provider_key(monkeypatch, invoice):
     assert llm_module.score_invoice_with_llm(invoice)["risk_score"] == 10
     assert calls[0]["api_base"] == "http://litellm:4000"
     assert calls[0]["api_key"] == "sk-proxy"
+
+
+def test_anthropic_omits_temperature_and_sets_max_tokens(monkeypatch, invoice):
+    """claude-* rejects `temperature` (400) and requires `max_tokens`."""
+    calls = _stub_litellm(monkeypatch, '{"risk_score": 20, "fraud_flags": [], "rationale": "ok"}')
+    monkeypatch.setattr(
+        llm_module,
+        "settings",
+        settings_with(
+            monkeypatch,
+            CUSTODIAN_LLM_MODEL="anthropic/claude-opus-4-8",
+            ANTHROPIC_API_KEY="sk-ant-xxx",
+        ),
+    )
+
+    assert llm_module.score_invoice_with_llm(invoice)["risk_score"] == 20
+    assert calls[0]["model"] == "anthropic/claude-opus-4-8"
+    assert calls[0]["api_key"] == "sk-ant-xxx"
+    assert "temperature" not in calls[0]
+    assert calls[0]["max_tokens"] == 1024
 
 
 def test_unparseable_response_falls_back(monkeypatch, invoice):
