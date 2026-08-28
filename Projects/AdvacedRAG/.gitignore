@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.py[cod]
+.env
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Local data stores
+data/qdrant/
+data/*.db
+data/*.sqlite3
+.fastembed_cache/
+eval_results/
