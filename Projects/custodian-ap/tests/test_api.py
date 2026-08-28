@@ -139,6 +139,28 @@ def test_policies_endpoint():
     assert resp.json()["absolute_ceiling"] == 250000
 
 
+def test_ocr_endpoint_processes_text():
+    text = (
+        "Invoice Number: OCR-API-1\n"
+        "Vendor: Acme\n"
+        "Account: ACME-CHK-889201\n"
+        "Invoice Date: 2026-08-12\n"
+        "Due Date: 2026-09-12\n"
+        "- Paper\n"
+        "Total: $1234.00\n"
+    )
+    resp = client.post("/invoices/ocr", json={"text": text})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["invoice"]["invoice_id"] == "OCR-API-1"
+    assert body["status"] == "paid"
+
+
+def test_ocr_endpoint_bad_text_is_422():
+    resp = client.post("/invoices/ocr", json={"text": "nothing useful here"})
+    assert resp.status_code == 422
+
+
 def test_metrics_endpoint_prometheus_format():
     client.post("/invoices", json=_clean_invoice("API-METRICS", 1500.0))
     resp = client.get("/metrics")

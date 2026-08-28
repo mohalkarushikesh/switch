@@ -118,6 +118,8 @@ The runnable slice of the platform:
   (`CUSTODIAN_PII_BACKEND=presidio`), which degrades back to regex if unavailable.
 - **API-key authentication with roles** — submitter / reviewer / admin on the state-changing
   endpoints (`CUSTODIAN_API_KEYS`); off by default, reads stay open.
+- **OCR ingest** — parse OCR-style invoice text into structured invoices (`POST /invoices/ocr`).
+- **Notifications** — rejected or high-risk invoices fire a webhook and/or JSONL log entry.
 - **Two Docker stacks** — a minimal one (API + LiteLLM) and a full governance/observability stack
   (`docker-compose.infra.yml`: Keycloak, Postgres, Langfuse, Prometheus, Grafana, SPIRE).
 
@@ -155,7 +157,7 @@ docker compose -f docker-compose.infra.yml up --build
 #    Keycloak http://localhost:8080 · Langfuse http://localhost:3001
 #    Prometheus http://localhost:9090 · Grafana http://localhost:3002
 
-# Run the tests (44 pass + 1 skipped without the Presidio model; offline, in-memory DB)
+# Run the tests (56 pass + 1 skipped without the Presidio model; offline, in-memory DB)
 python -m pytest tests/ -q
 ```
 
@@ -169,6 +171,7 @@ Write endpoints (POST) accept an `X-API-Key` header when auth is enabled
 | ------ | ----------------------------- | ---------------------------------------------- |
 | GET    | `/health`                     | Liveness + active scoring mode                 |
 | POST   | `/invoices`                   | Submit one invoice through the pipeline        |
+| POST   | `/invoices/ocr`               | Submit OCR-style invoice text (parsed → pipeline) |
 | POST   | `/invoices/batch`             | Submit many invoices                           |
 | GET    | `/invoices`                   | List (filter by `status`, `min_risk`, `max_risk`) |
 | GET    | `/invoices/{id}`              | Fetch one processed invoice                    |
@@ -202,7 +205,8 @@ BankPayeeAgent/
 ├── docker-compose.yml            # minimal stack: API + LiteLLM gateway
 ├── docker-compose.infra.yml      # full stack: + Keycloak/Postgres/Langfuse/Prometheus/Grafana/SPIRE
 ├── data/
-│   └── sample_invoices/          # example invoices to run the pipeline on
+│   ├── sample_invoices/          # example invoices to run the pipeline on
+│   └── sample_ocr/               # example OCR-text invoices for /invoices/ocr
 ├── deploy/
 │   ├── litellm.config.yaml       # LiteLLM gateway model routing
 │   └── infra/
@@ -219,6 +223,8 @@ BankPayeeAgent/
 │       ├── ledger.py             # mock ledger / payment rail
 │       ├── store.py              # in-memory processed-invoice store (legacy/fallback)
 │       ├── db.py                 # SQLite persistence: durable store + audit log
+│       ├── ocr.py                # OCR-text → invoice-field extraction
+│       ├── notify.py             # notifications (log / webhook) for flagged invoices
 │       ├── orchestrator.py       # chains agents + governance into one pipeline
 │       ├── main.py               # CLI entrypoint
 │       ├── api.py                # FastAPI service + dashboard mount
@@ -238,5 +244,7 @@ BankPayeeAgent/
     ├── test_governance.py        # data / policy / audit tests
     ├── test_persistence.py       # SQLite store + duplicate-detection tests
     ├── test_auth.py              # API-key auth + role enforcement tests
+    ├── test_notify.py            # notification (rejected / high-risk) tests
+    ├── test_ocr.py               # OCR text-extraction tests
     └── test_pii_presidio.py      # Presidio backend tests (skip if model absent)
 ```

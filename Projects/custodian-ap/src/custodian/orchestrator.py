@@ -20,6 +20,7 @@ from .config import settings
 from .governance import AuditLog, PIIRedactor, PolicyEngine
 from .ledger import Ledger
 from .models import ApprovalDecision, Invoice, InvoiceStatus, ProcessedInvoice
+from .notify import Notification, Notifier
 
 
 class Custodian:
@@ -29,6 +30,7 @@ class Custodian:
         redactor: PIIRedactor | None = None,
         policy: PolicyEngine | None = None,
         audit_log: AuditLog | None = None,
+        notifier: Notifier | None = None,
     ):
         # A single ledger is shared across all payments in this run.
         self.ledger = ledger or Ledger(balance=settings.ledger_balance)
@@ -41,6 +43,10 @@ class Custodian:
         self.redactor = redactor or PIIRedactor()
         self.policy = policy or PolicyEngine()
         self.audit_log = audit_log
+
+        # Notifications (optional): fire on rejected / high-risk invoices.
+        self.notifier = notifier
+        self.notify_min_risk = settings.notify_min_risk
 
     def process(self, invoice: Invoice, is_duplicate: bool = False) -> ProcessedInvoice:
         """Run one invoice through the full pipeline and return its record.
@@ -117,11 +123,43 @@ class Custodian:
         else:
             record.audit_trail.append(f"No payment: {payment.reason}")
 
-        # 5. Audit governance — persist the full record if a log is configured.
+        # 5. Notifications — alert on invoices that need human attention.
+        self._maybe_notify(record)
+
+        # 6. Audit governance — persist the full record if a log is configured.
         if self.audit_log is not None:
             self.audit_log.record(record)
 
         return record
+
+    def _maybe_notify(self, record: ProcessedInvoice) -> None:
+        """Send a notification if the invoice was rejected or scored high-risk."""
+        if self.notifier is None:
+            return
+        risk = record.assessment.risk_score if record.assessment else 0
+        events: list[str] = []
+        if record.status is InvoiceStatus.REJECTED:
+            events.append("rejected")
+        if risk >= self.notify_min_risk:
+            events.append("high_risk")
+        if not events:
+            return
+
+        inv = record.invoice
+        self.notifier.send(Notification(
+            invoice_id=inv.invoice_id,
+            events=events,
+            status=record.status.value,
+            risk_score=risk,
+            vendor_name=inv.vendor_name,
+            amount=inv.amount,
+            message=(
+                f"Invoice {inv.invoice_id} from '{inv.vendor_name}' "
+                f"({inv.amount} {inv.currency}) — {', '.join(events)} "
+                f"[status={record.status.value}, risk={risk}]."
+            ),
+        ))
+        record.audit_trail.append(f"Notification sent ({', '.join(events)}).")
 
     def process_many(self, invoices: list[Invoice]) -> list[ProcessedInvoice]:
         """Process a batch of invoices in order, flagging in-batch duplicates."""

@@ -56,6 +56,11 @@ class Settings:
     # Empty = auth disabled (all endpoints open).
     api_keys: str
 
+    # Notifications: fire on rejected or high-risk invoices.
+    notify_min_risk: int             # risk score at/above which "high_risk" fires
+    webhook_url: str | None          # POST notifications here (best-effort)
+    notify_log_path: str | None      # append notifications to this JSONL file
+
     @property
     def has_llm_credentials(self) -> bool:
         """True if we can reach an LLM: a direct provider key or a proxy base URL."""
@@ -84,6 +89,9 @@ def load_settings() -> Settings:
         db_path=os.getenv("CUSTODIAN_DB_PATH") or "data/custodian.db",
         pii_backend=(os.getenv("CUSTODIAN_PII_BACKEND") or "regex").lower(),
         api_keys=os.getenv("CUSTODIAN_API_KEYS", ""),
+        notify_min_risk=_get_int("CUSTODIAN_NOTIFY_MIN_RISK", 70),
+        webhook_url=os.getenv("CUSTODIAN_WEBHOOK_URL") or None,
+        notify_log_path=os.getenv("CUSTODIAN_NOTIFY_LOG") or None,
     )
 
 

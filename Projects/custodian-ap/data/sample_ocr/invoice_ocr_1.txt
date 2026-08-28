@@ -1,0 +1,16 @@
+ACME OFFICE SUPPLIES
+123 Market Street, Springfield
+
+Invoice Number: OCR-001
+Vendor: Acme Office Supplies
+Account: ACME-CHK-889201
+Invoice Date: 2026-08-12
+Due Date: 2026-09-12
+
+Line items:
+- Printer paper (20 boxes)
+- Ink cartridges (12)
+- Stationery set
+
+Total: $1,340.75
+Memo: Monthly office supply order, PO-5521.

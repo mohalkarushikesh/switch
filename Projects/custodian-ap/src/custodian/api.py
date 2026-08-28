@@ -21,10 +21,12 @@ from fastapi.responses import PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from .agents import IngestAgent
 from .config import settings
 from .db import Database, SqliteAuditLog, SqliteStore
 from .ledger import Ledger, Transaction
 from .models import ApprovalDecision, Invoice, InvoiceStatus, ProcessedInvoice
+from .notify import LogNotifier, MultiNotifier, Notifier, WebhookNotifier
 from .orchestrator import Custodian
 
 app = FastAPI(
@@ -62,8 +64,20 @@ def _rebuild_ledger() -> Ledger:
     return ledger
 
 
+def _build_notifier() -> Notifier | None:
+    """Assemble a notifier from config (webhook and/or log); None if unconfigured."""
+    notifiers: list[Notifier] = []
+    if settings.webhook_url:
+        notifiers.append(WebhookNotifier(settings.webhook_url))
+    if settings.notify_log_path:
+        notifiers.append(LogNotifier(settings.notify_log_path))
+    if not notifiers:
+        return None
+    return notifiers[0] if len(notifiers) == 1 else MultiNotifier(notifiers)
+
+
 _ledger = _rebuild_ledger()
-_custodian = Custodian(ledger=_ledger, audit_log=_audit_log)
+_custodian = Custodian(ledger=_ledger, audit_log=_audit_log, notifier=_build_notifier())
 
 
 # --- Authentication -------------------------------------------------------
@@ -138,6 +152,29 @@ def submit_invoice(payload: InvoiceIn, _=Depends(require_role("submitter"))) -> 
     does NOT overwrite the original record — only the attempt is audited.
     """
     invoice = Invoice(**payload.model_dump())
+    is_duplicate = _store.has(invoice.invoice_id)
+    record = _custodian.process(invoice, is_duplicate=is_duplicate)
+    if not is_duplicate:
+        _store.save(record)
+    return record
+
+
+class OCRIn(BaseModel):
+    """Raw invoice text, as produced by an OCR engine or vision model."""
+
+    text: str
+
+
+@app.post("/invoices/ocr", response_model=ProcessedInvoice)
+def submit_ocr(payload: OCRIn, _=Depends(require_role("submitter"))) -> ProcessedInvoice:
+    """Extract an invoice from OCR text, then run it through the pipeline."""
+    try:
+        invoice = IngestAgent().from_text(payload.text)
+    except Exception as exc:  # validation / extraction failure
+        raise HTTPException(
+            status_code=422,
+            detail=f"Could not extract a valid invoice from the text: {exc}",
+        )
     is_duplicate = _store.has(invoice.invoice_id)
     record = _custodian.process(invoice, is_duplicate=is_duplicate)
     if not is_duplicate:

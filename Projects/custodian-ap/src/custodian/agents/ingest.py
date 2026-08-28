@@ -7,18 +7,22 @@ from datetime import date, datetime
 from pathlib import Path
 
 from ..models import Invoice
+from ..ocr import parse_invoice_text
 
 
 class IngestAgent:
-    """Reads invoices from dicts or JSON files and validates their shape.
-
-    In a fuller system this is where OCR / document parsing would live; here we
-    accept already-structured invoice records.
-    """
+    """Reads invoices from dicts, JSON files, or OCR text and validates them."""
 
     def from_dict(self, raw: dict) -> Invoice:
         """Validate a single raw invoice record into an Invoice."""
         return Invoice(**self._coerce_dates(raw))
+
+    def from_text(self, text: str) -> Invoice:
+        """Parse OCR-style invoice text into a validated Invoice.
+
+        Raises pydantic ValidationError if a required field couldn't be extracted.
+        """
+        return self.from_dict(parse_invoice_text(text))
 
     def from_file(self, path: str | Path) -> Invoice:
         """Load and validate one invoice from a JSON file."""
