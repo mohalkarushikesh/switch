@@ -54,19 +54,44 @@ function Detail({ rec, onApprove, onReject }) {
   )
 }
 
+const STATUSES = ['all', 'paid', 'needs_review', 'rejected', 'failed']
+
 export default function InvoiceTable({ records, onApprove, onReject }) {
   const [open, setOpen] = useState(null)
+  const [query, setQuery] = useState('')
+  const [status, setStatus] = useState('all')
+
+  const q = query.trim().toLowerCase()
+  const filtered = records.filter((r) => {
+    if (status !== 'all' && r.status !== status) return false
+    if (!q) return true
+    return (
+      r.invoice.invoice_id.toLowerCase().includes(q) ||
+      r.invoice.vendor_name.toLowerCase().includes(q)
+    )
+  })
+
   return (
     <div className="panel">
-      <h2>Processed invoices ({records.length})</h2>
+      <div className="row" style={{ justifyContent: 'space-between' }}>
+        <h2 style={{ margin: 0 }}>Processed invoices ({filtered.length}/{records.length})</h2>
+        <div className="row">
+          <input style={{ maxWidth: 220 }} placeholder="Search id or vendor…"
+                 value={query} onChange={(e) => setQuery(e.target.value)} />
+          <select style={{ width: 'auto' }} value={status} onChange={(e) => setStatus(e.target.value)}>
+            {STATUSES.map((s) => <option key={s} value={s}>{s === 'all' ? 'All statuses' : s.replace('_', ' ')}</option>)}
+          </select>
+        </div>
+      </div>
       {records.length === 0 && <div className="empty">No invoices yet — submit one above.</div>}
-      {records.length > 0 && (
+      {records.length > 0 && filtered.length === 0 && <div className="empty">No invoices match the filter.</div>}
+      {filtered.length > 0 && (
         <table>
           <thead>
             <tr><th>Invoice</th><th>Vendor</th><th>Amount</th><th>Pipeline</th><th>Status</th></tr>
           </thead>
           <tbody>
-            {records.map((rec) => {
+            {filtered.map((rec) => {
               const id = rec.invoice.invoice_id
               const isOpen = open === id
               return (

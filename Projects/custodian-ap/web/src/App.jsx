@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, setApiKey } from './api.js'
 import Overview from './components/Overview.jsx'
 import StatsBar from './components/StatsBar.jsx'
 import SubmitPanel from './components/SubmitPanel.jsx'
 import InvoiceTable from './components/InvoiceTable.jsx'
 import Attention from './components/Attention.jsx'
+import Charts from './components/Charts.jsx'
+import Toasts from './components/Toasts.jsx'
 
 const SAMPLES = [
   { invoice_id: 'INV-001', vendor_name: 'Acme Office Supplies', vendor_account: 'ACME-CHK-889201', amount: 1240.5, issue_date: '2026-08-10', due_date: '2026-09-10', line_items: ['Paper', 'Ink'], memo: 'Monthly office supply order.' },
@@ -19,6 +21,15 @@ export default function App() {
   const [invoices, setInvoices] = useState([])
   const [key, setKey] = useState('')
   const [error, setError] = useState('')
+  const [toasts, setToasts] = useState([])
+  const toastId = useRef(0)
+
+  const pushToast = useCallback((msg, type = 'ok') => {
+    const id = ++toastId.current
+    setToasts((ts) => [...ts, { id, msg, type }])
+    setTimeout(() => setToasts((ts) => ts.filter((t) => t.id !== id)), 3500)
+  }, [])
+  const dismiss = (id) => setToasts((ts) => ts.filter((t) => t.id !== id))
 
   const refresh = useCallback(async () => {
     try {
@@ -36,9 +47,23 @@ export default function App() {
   }, [refresh])
 
   const onKey = (e) => { setKey(e.target.value); setApiKey(e.target.value) }
-  const run = (fn) => async (...args) => { await fn(...args); await refresh() }
 
-  const loadSamples = run(async () => { for (const s of SAMPLES) { try { await api.submit(s) } catch { /* dup/auth */ } } })
+  // Wrap an API call: refresh + success toast on success, error toast on failure.
+  const run = (fn, successMsg) => async (...args) => {
+    try {
+      const r = await fn(...args)
+      await refresh()
+      if (successMsg) pushToast(successMsg, 'ok')
+      return r
+    } catch (e) {
+      pushToast(String(e.message || e), 'bad')
+      throw e
+    }
+  }
+
+  const loadSamples = run(async () => {
+    for (const s of SAMPLES) { try { await api.submit(s) } catch { /* dup/auth */ } }
+  }, 'Sample invoices loaded')
 
   return (
     <>
@@ -55,12 +80,19 @@ export default function App() {
         {error && <div className="panel err">Backend error: {error}</div>}
         <Overview />
         <StatsBar stats={stats} health={health} />
+        <Charts records={invoices} />
         <div className="grid2">
-          <SubmitPanel onSubmit={run(api.submit)} onOcr={run(api.submitOcr)} />
+          <SubmitPanel onSubmit={run(api.submit, 'Invoice submitted')} onOcr={run(api.submitOcr, 'Invoice extracted & submitted')} />
           <Attention records={invoices} />
         </div>
-        <InvoiceTable records={invoices} onApprove={run(api.approve)} onReject={run(api.reject)} />
+        <InvoiceTable
+          records={invoices}
+          onApprove={run(api.approve, 'Invoice approved & paid')}
+          onReject={run(api.reject, 'Invoice rejected')}
+        />
       </main>
+
+      <Toasts items={toasts} onDismiss={dismiss} />
     </>
   )
 }
