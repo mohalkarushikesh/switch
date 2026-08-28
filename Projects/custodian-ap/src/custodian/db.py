@@ -119,15 +119,17 @@ class SqliteStore:
         self.db.execute("DELETE FROM processed_invoices WHERE invoice_id = ?", (invoice_id,))
 
     def list(self, status: str | None = None) -> list[ProcessedInvoice]:
+        # Newest first. rowid is the insertion-order tiebreaker for records that
+        # share a (second-resolution) created_at timestamp.
         if status:
             rows = self.db.query(
                 "SELECT payload FROM processed_invoices WHERE status = ? "
-                "ORDER BY created_at, invoice_id",
+                "ORDER BY created_at DESC, rowid DESC",
                 (status,),
             )
         else:
             rows = self.db.query(
-                "SELECT payload FROM processed_invoices ORDER BY created_at, invoice_id"
+                "SELECT payload FROM processed_invoices ORDER BY created_at DESC, rowid DESC"
             )
         return [ProcessedInvoice.model_validate_json(r["payload"]) for r in rows]
 

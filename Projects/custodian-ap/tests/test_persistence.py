@@ -35,6 +35,15 @@ def test_store_roundtrip_and_status_filter():
     assert {r.invoice.invoice_id for r in store.list(status="paid")} == {"R-1"}
 
 
+def test_store_lists_newest_first():
+    store = SqliteStore(Database(":memory:"))
+    cust = Custodian(Ledger(balance=1_000_000))
+    for i in range(1, 4):
+        store.save(cust.process(_invoice(f"ORD-{i}", 1234.0)))
+    ids = [r.invoice.invoice_id for r in store.list()]
+    assert ids == ["ORD-3", "ORD-2", "ORD-1"]  # most recently saved first
+
+
 def test_store_persists_across_restart(tmp_path):
     db_file = tmp_path / "custodian.db"
 
