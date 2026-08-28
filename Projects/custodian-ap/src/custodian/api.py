@@ -17,7 +17,7 @@ from datetime import date
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import RedirectResponse
+from fastapi.responses import PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -228,6 +228,35 @@ def stats() -> dict:
         "total_paid": total_paid,
         "ledger_balance": _ledger.balance,
     }
+
+
+@app.get("/metrics", response_class=PlainTextResponse)
+def metrics() -> str:
+    """Prometheus text-format metrics for the observability stack to scrape."""
+    records = _store.list()
+    by_status: dict[str, int] = {}
+    for r in records:
+        by_status[r.status.value] = by_status.get(r.status.value, 0) + 1
+    total_paid = sum(r.invoice.amount for r in records if r.status is InvoiceStatus.PAID)
+
+    lines = [
+        "# HELP custodian_invoices_total Total invoices processed.",
+        "# TYPE custodian_invoices_total counter",
+        f"custodian_invoices_total {len(records)}",
+        "# HELP custodian_invoices_by_status Invoices grouped by final status.",
+        "# TYPE custodian_invoices_by_status gauge",
+    ]
+    for status_value, count in sorted(by_status.items()):
+        lines.append(f'custodian_invoices_by_status{{status="{status_value}"}} {count}')
+    lines += [
+        "# HELP custodian_total_paid_amount Total amount auto-paid.",
+        "# TYPE custodian_total_paid_amount counter",
+        f"custodian_total_paid_amount {total_paid}",
+        "# HELP custodian_ledger_balance Current mock-ledger balance.",
+        "# TYPE custodian_ledger_balance gauge",
+        f"custodian_ledger_balance {_ledger.balance}",
+    ]
+    return "\n".join(lines) + "\n"
 
 
 @app.get("/policies")

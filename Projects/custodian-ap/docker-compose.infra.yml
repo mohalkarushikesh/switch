@@ -1,0 +1,131 @@
+# Custodian FULL governance/observability stack.
+#
+# Extends the minimal docker-compose.yml with the identity and operations
+# governance layers from the target architecture:
+#
+#   postgres    shared database (Keycloak + Langfuse)
+#   keycloak    Identity layer — OIDC/SSO for humans and services
+#   spire-server Identity layer — SPIFFE workload identity (illustrative; see note)
+#   litellm     Model layer — LLM gateway (traces to Langfuse)
+#   langfuse    Operations layer — end-to-end LLM tracing
+#   prometheus  Operations layer — scrapes the API's /metrics
+#   grafana     Operations layer — dashboards over Prometheus
+#   api         the Custodian service itself
+#
+# Usage:
+#   cp .env.example .env      # add OPENAI_API_KEY / GROQ_API_KEY + secrets below
+#   docker compose -f docker-compose.infra.yml up --build
+#
+# NOTE: This is a reference/learning stack. It has NOT been run in this repo's
+# CI environment (container runtime unavailable). Validate/tune before real use —
+# especially secrets, SPIRE attestation, and network policy.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-custodian}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-custodian}
+      POSTGRES_DB: ${POSTGRES_DB:-custodian}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-custodian}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    command: ["start-dev"]
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-custodian}
+      KC_DB_USERNAME: ${POSTGRES_USER:-custodian}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-custodian}
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # SPIFFE workload identity. Illustrative — a functional deployment also needs
+  # a spire-agent per node plus a node/workload attestation policy.
+  spire-server:
+    image: ghcr.io/spiffe/spire-server:1.9.6
+    command: ["-config", "/opt/spire/conf/server.conf"]
+    volumes:
+      - ./deploy/infra/spire-server.conf:/opt/spire/conf/server.conf:ro
+      - spire-data:/opt/spire/data
+    ports:
+      - "8081:8081"
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    ports:
+      - "4000:4000"
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-custodian-local}
+      # Send LLM traces to Langfuse (also set success_callback in the config).
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_HOST: http://langfuse:3000
+    volumes:
+      - ./deploy/litellm.config.yaml:/app/config.yaml:ro
+
+  langfuse:
+    image: langfuse/langfuse:2
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-custodian}:${POSTGRES_PASSWORD:-custodian}@postgres:5432/${POSTGRES_DB:-custodian}
+      NEXTAUTH_URL: http://localhost:3001
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-changeme-langfuse-secret}
+      SALT: ${LANGFUSE_SALT:-changeme-langfuse-salt}
+    ports:
+      - "3001:3000"
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./deploy/infra/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    volumes:
+      - ./deploy/infra/grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "3002:3000"
+    depends_on:
+      - prometheus
+
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      CUSTODIAN_LLM_API_BASE: http://litellm:4000
+      CUSTODIAN_LLM_API_KEY: ${LITELLM_MASTER_KEY:-sk-custodian-local}
+      CUSTODIAN_LLM_MODEL: ${CUSTODIAN_LLM_MODEL:-gpt-4o-mini}
+      CUSTODIAN_DB_PATH: /data/custodian.db
+      CUSTODIAN_PII_BACKEND: ${CUSTODIAN_PII_BACKEND:-regex}
+    volumes:
+      - api-data:/data
+    depends_on:
+      - litellm
+      - prometheus
+
+volumes:
+  pgdata:
+  spire-data:
+  api-data:

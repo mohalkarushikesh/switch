@@ -1,0 +1,16 @@
+# Prometheus scrape configuration for the Custodian observability stack.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Scrape the Custodian API's /metrics endpoint.
+  - job_name: custodian-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:8000"]
+
+  # Prometheus scraping itself.
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

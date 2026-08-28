@@ -113,7 +113,11 @@ The runnable slice of the platform:
 - **SQLite persistence** — processed invoices and the audit trail survive restarts; the ledger
   balance is reconstructed from paid invoices on startup.
 - **REST API** (FastAPI) and a **console dashboard** to submit invoices and action the review queue.
-- **Docker stack** — the API plus a LiteLLM gateway via `docker compose`.
+- **Prometheus `/metrics`** endpoint for the observability layer.
+- **PII backend is pluggable** — dependency-free regex by default, or Microsoft **Presidio**
+  (`CUSTODIAN_PII_BACKEND=presidio`), which degrades back to regex if unavailable.
+- **Two Docker stacks** — a minimal one (API + LiteLLM) and a full governance/observability stack
+  (`docker-compose.infra.yml`: Keycloak, Postgres, Langfuse, Prometheus, Grafana, SPIRE).
 
 The rest of the target architecture (Keycloak, SPIRE, Infisical, OpenMetadata, MLflow, Langfuse,
 Prometheus/Grafana) is the roadmap these layers plug into.
@@ -140,10 +144,16 @@ PYTHONPATH=src uvicorn custodian.api:app --reload
 #    -> API docs:   http://localhost:8000/docs
 #    -> Dashboard:  http://localhost:8000/ui/
 
-# c) Full Docker stack (API + LiteLLM gateway)
+# c) Docker stack (API + LiteLLM gateway)
 docker compose up --build      # -> http://localhost:8000/ui/
 
-# Run the tests (35 tests, offline/heuristic, in-memory DB)
+# d) FULL governance/observability stack (adds Keycloak, Postgres, Langfuse,
+#    Prometheus, Grafana, SPIRE). Reference config — validated, not yet run here.
+docker compose -f docker-compose.infra.yml up --build
+#    Keycloak http://localhost:8080 · Langfuse http://localhost:3001
+#    Prometheus http://localhost:9090 · Grafana http://localhost:3002
+
+# Run the tests (37 pass + 1 skipped without the Presidio model; offline, in-memory DB)
 python -m pytest tests/ -q
 ```
 
@@ -161,7 +171,8 @@ python -m pytest tests/ -q
 | GET    | `/ledger`                     | Ledger balance + transactions                  |
 | GET    | `/stats`                      | Aggregate counts + totals                      |
 | GET    | `/policies`                   | Active policy-governance configuration         |
-| GET    | `/audit`                      | Persisted audit log (if `CUSTODIAN_AUDIT_LOG` set) |
+| GET    | `/audit`                      | Persisted audit log entries (SQLite-backed)    |
+| GET    | `/metrics`                    | Prometheus metrics for the observability stack |
 
 ## What You Will Learn
 
@@ -182,11 +193,16 @@ BankPayeeAgent/
 ├── requirements.txt              # Python dependencies
 ├── .env.example                  # config template (LLM keys, thresholds, governance)
 ├── Dockerfile                    # API image
-├── docker-compose.yml            # API + LiteLLM gateway
+├── docker-compose.yml            # minimal stack: API + LiteLLM gateway
+├── docker-compose.infra.yml      # full stack: + Keycloak/Postgres/Langfuse/Prometheus/Grafana/SPIRE
 ├── data/
 │   └── sample_invoices/          # example invoices to run the pipeline on
 ├── deploy/
-│   └── litellm.config.yaml       # LiteLLM gateway model routing
+│   ├── litellm.config.yaml       # LiteLLM gateway model routing
+│   └── infra/
+│       ├── prometheus.yml        # Prometheus scrape config (targets the API)
+│       ├── spire-server.conf     # SPIRE server config (illustrative)
+│       └── grafana/provisioning/ # Grafana datasource auto-provisioning
 ├── ui/
 │   └── index.html                # console dashboard (served at /ui/)
 ├── src/
@@ -206,13 +222,14 @@ BankPayeeAgent/
 │       │   ├── approval.py       # approval routing (risk thresholds)
 │       │   └── payment.py        # auto-pay against the ledger
 │       └── governance/
-│           ├── data.py           # PII redaction (Presidio-style)
-│           ├── policy.py         # hard-rule policy engine
+│           ├── data.py           # PII redaction (regex or Presidio backend)
+│           ├── policy.py         # hard-rule policy engine (+ duplicate detection)
 │           └── audit.py          # append-only JSONL audit log
 └── tests/
     ├── conftest.py               # shared test setup (src path, offline, in-memory DB)
     ├── test_pipeline.py          # end-to-end pipeline tests
     ├── test_api.py               # REST API tests
     ├── test_governance.py        # data / policy / audit tests
-    └── test_persistence.py       # SQLite store + duplicate-detection tests
+    ├── test_persistence.py       # SQLite store + duplicate-detection tests
+    └── test_pii_presidio.py      # Presidio backend tests (skip if model absent)
 ```

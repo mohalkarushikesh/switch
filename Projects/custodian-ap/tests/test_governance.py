@@ -60,6 +60,17 @@ def test_pipeline_records_redacted_pii():
     assert "EMAIL" in record.redacted_pii
 
 
+def test_presidio_request_degrades_gracefully():
+    # Requesting the Presidio backend must never crash: if presidio or its model
+    # is unavailable it falls back to regex, and redaction still works.
+    from custodian.governance.data import PIIRedactor, _make_backend
+
+    redactor = PIIRedactor(backend=_make_backend("presidio"))
+    assert redactor.backend_name in ("presidio", "regex")
+    _, found = redactor.redact_text("reach me at a@b.com")
+    assert "EMAIL" in found
+
+
 # --- Policy layer ---
 
 def test_policy_blocks_amount_over_ceiling():

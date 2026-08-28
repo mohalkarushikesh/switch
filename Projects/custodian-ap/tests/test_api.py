@@ -139,6 +139,16 @@ def test_policies_endpoint():
     assert resp.json()["absolute_ceiling"] == 250000
 
 
+def test_metrics_endpoint_prometheus_format():
+    client.post("/invoices", json=_clean_invoice("API-METRICS", 1500.0))
+    resp = client.get("/metrics")
+    assert resp.status_code == 200
+    body = resp.text
+    assert "custodian_invoices_total" in body
+    assert "custodian_ledger_balance" in body
+    assert 'custodian_invoices_by_status{status="paid"}' in body
+
+
 def test_audit_endpoint_returns_entries():
     # SQLite audit log is always on; submitting produces an audit entry.
     client.post("/invoices", json=_clean_invoice("API-AUDIT", 1500.0))
