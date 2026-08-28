@@ -116,6 +116,8 @@ The runnable slice of the platform:
 - **Prometheus `/metrics`** endpoint for the observability layer.
 - **PII backend is pluggable** — dependency-free regex by default, or Microsoft **Presidio**
   (`CUSTODIAN_PII_BACKEND=presidio`), which degrades back to regex if unavailable.
+- **API-key authentication with roles** — submitter / reviewer / admin on the state-changing
+  endpoints (`CUSTODIAN_API_KEYS`); off by default, reads stay open.
 - **Two Docker stacks** — a minimal one (API + LiteLLM) and a full governance/observability stack
   (`docker-compose.infra.yml`: Keycloak, Postgres, Langfuse, Prometheus, Grafana, SPIRE).
 
@@ -153,11 +155,15 @@ docker compose -f docker-compose.infra.yml up --build
 #    Keycloak http://localhost:8080 · Langfuse http://localhost:3001
 #    Prometheus http://localhost:9090 · Grafana http://localhost:3002
 
-# Run the tests (37 pass + 1 skipped without the Presidio model; offline, in-memory DB)
+# Run the tests (44 pass + 1 skipped without the Presidio model; offline, in-memory DB)
 python -m pytest tests/ -q
 ```
 
 ### API endpoints
+
+Write endpoints (POST) accept an `X-API-Key` header when auth is enabled
+(`CUSTODIAN_API_KEYS`); submit requires the `submitter` role, approve/reject require
+`reviewer` (`admin` may do anything). Reads are open.
 
 | Method | Path                          | Purpose                                        |
 | ------ | ----------------------------- | ---------------------------------------------- |
@@ -231,5 +237,6 @@ BankPayeeAgent/
     ├── test_api.py               # REST API tests
     ├── test_governance.py        # data / policy / audit tests
     ├── test_persistence.py       # SQLite store + duplicate-detection tests
+    ├── test_auth.py              # API-key auth + role enforcement tests
     └── test_pii_presidio.py      # Presidio backend tests (skip if model absent)
 ```

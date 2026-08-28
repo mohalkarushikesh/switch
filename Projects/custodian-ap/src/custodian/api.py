@@ -16,7 +16,7 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -66,6 +66,45 @@ _ledger = _rebuild_ledger()
 _custodian = Custodian(ledger=_ledger, audit_log=_audit_log)
 
 
+# --- Authentication -------------------------------------------------------
+# API keys map to roles. "admin" may do anything; other roles are scoped.
+# When no keys are configured, auth is disabled and all endpoints are open
+# (keeps the local demo and tests friction-free). Reads stay open by design in
+# this MVP; only state-changing endpoints are protected.
+
+def _parse_api_keys(raw: str) -> dict[str, str]:
+    keys: dict[str, str] = {}
+    for pair in raw.split(","):
+        pair = pair.strip()
+        if not pair:
+            continue
+        key, _, role = pair.partition(":")
+        keys[key.strip()] = (role.strip() or "admin")
+    return keys
+
+
+_API_KEYS = _parse_api_keys(settings.api_keys)
+
+
+def require_role(*allowed: str):
+    """Build a dependency that authenticates the X-API-Key and checks its role."""
+
+    def dependency(x_api_key: str | None = Header(default=None, alias="X-API-Key")) -> dict:
+        if not _API_KEYS:                       # auth disabled — open
+            return {"role": "admin", "auth": "disabled"}
+        if not x_api_key or x_api_key not in _API_KEYS:
+            raise HTTPException(status_code=401, detail="Missing or invalid API key.")
+        role = _API_KEYS[x_api_key]
+        if allowed and role != "admin" and role not in allowed:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Role '{role}' not permitted; requires one of {list(allowed)}.",
+            )
+        return {"role": role}
+
+    return dependency
+
+
 class InvoiceIn(BaseModel):
     """Invoice payload accepted by POST /invoices (dates as ISO strings)."""
 
@@ -92,7 +131,7 @@ def health() -> dict:
 
 
 @app.post("/invoices", response_model=ProcessedInvoice)
-def submit_invoice(payload: InvoiceIn) -> ProcessedInvoice:
+def submit_invoice(payload: InvoiceIn, _=Depends(require_role("submitter"))) -> ProcessedInvoice:
     """Run one invoice through the pipeline and persist the result.
 
     A re-submitted invoice id is flagged as a duplicate (blocked by policy) and
@@ -107,7 +146,7 @@ def submit_invoice(payload: InvoiceIn) -> ProcessedInvoice:
 
 
 @app.post("/invoices/batch", response_model=list[ProcessedInvoice])
-def submit_invoices(payloads: list[InvoiceIn]) -> list[ProcessedInvoice]:
+def submit_invoices(payloads: list[InvoiceIn], _=Depends(require_role("submitter"))) -> list[ProcessedInvoice]:
     """Run a batch of invoices through the pipeline in one call."""
     records = []
     for payload in payloads:
@@ -145,7 +184,7 @@ def get_invoice(invoice_id: str) -> ProcessedInvoice:
 
 
 @app.post("/invoices/{invoice_id}/approve", response_model=ProcessedInvoice)
-def approve_invoice(invoice_id: str) -> ProcessedInvoice:
+def approve_invoice(invoice_id: str, _=Depends(require_role("reviewer"))) -> ProcessedInvoice:
     """Human reviewer approves a queued invoice; payment is then attempted."""
     record = _store.get(invoice_id)
     if record is None:
@@ -180,7 +219,7 @@ def approve_invoice(invoice_id: str) -> ProcessedInvoice:
 
 
 @app.post("/invoices/{invoice_id}/reject", response_model=ProcessedInvoice)
-def reject_invoice(invoice_id: str) -> ProcessedInvoice:
+def reject_invoice(invoice_id: str, _=Depends(require_role("reviewer"))) -> ProcessedInvoice:
     """Human reviewer rejects a queued invoice; no payment is made."""
     record = _store.get(invoice_id)
     if record is None:

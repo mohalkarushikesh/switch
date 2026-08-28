@@ -52,6 +52,10 @@ class Settings:
     # PII redaction backend: "regex" (default, no deps), "presidio", or "auto"
     pii_backend: str
 
+    # API auth: comma-separated "key:role" pairs (roles: submitter/reviewer/admin).
+    # Empty = auth disabled (all endpoints open).
+    api_keys: str
+
     @property
     def has_llm_credentials(self) -> bool:
         """True if we can reach an LLM: a direct provider key or a proxy base URL."""
@@ -79,6 +83,7 @@ def load_settings() -> Settings:
         audit_log_path=os.getenv("CUSTODIAN_AUDIT_LOG") or None,
         db_path=os.getenv("CUSTODIAN_DB_PATH") or "data/custodian.db",
         pii_backend=(os.getenv("CUSTODIAN_PII_BACKEND") or "regex").lower(),
+        api_keys=os.getenv("CUSTODIAN_API_KEYS", ""),
     )
 
 

@@ -85,6 +85,8 @@
       <button id="load-samples">Load sample invoices</button>
       <button class="ghost" id="refresh">Refresh</button>
       <button class="ghost" id="toggle-form">Submit an invoice ▾</button>
+      <input id="api-key" placeholder="API key (only if auth enabled)"
+             style="max-width:260px" title="Sent as X-API-Key on write requests" />
     </div>
 
     <div class="panel" id="form-panel" style="display:none; margin-bottom:20px;">
@@ -188,15 +190,24 @@
       afterRow.after(tr);
     }
 
+    // Attach the API key (if provided) so writes work when auth is enabled.
+    function writeHeaders(json = false) {
+      const h = {};
+      if (json) h['Content-Type'] = 'application/json';
+      const key = $('api-key').value.trim();
+      if (key) h['X-API-Key'] = key;
+      return h;
+    }
+
     async function act(id, action) {
-      const resp = await fetch(`/invoices/${id}/${action}`, { method: 'POST' });
+      const resp = await fetch(`/invoices/${id}/${action}`, { method: 'POST', headers: writeHeaders() });
       if (!resp.ok) { alert(`${action} failed: ${(await resp.json()).detail}`); return; }
       await refreshAll();
     }
 
     async function submitOne(payload) {
       const resp = await fetch('/invoices', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: writeHeaders(true),
         body: JSON.stringify(payload),
       });
       if (!resp.ok) alert('Submit failed: ' + (await resp.text()));
