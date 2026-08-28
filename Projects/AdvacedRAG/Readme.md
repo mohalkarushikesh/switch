@@ -269,6 +269,35 @@ Two things this actually establishes, and one it does not:
 
 Reranking is measured as *harmful* here and is therefore score-only: see below.
 
+### A weak score must not drive decisions
+
+The lexical fallback scorer is useful to look at and useless to act on, and that
+distinction has to be enforced in two separate places — both were originally
+wrong:
+
+1. **Ordering.** Letting it reorder dropped p@5 from 0.76 to 0.64, so it scores
+   but does not sort.
+2. **The CRAG relevance floor.** Gating on it was worse. Measured against the
+   live service, four of four semantically-phrased queries scored 0.005–0.133
+   *while retrieval had returned exactly the right document*:
+
+   | Query | Top source | rerank | retrieval |
+   | --- | --- | --- | --- |
+   | "why was my container killed for using too much RAM?" | `oomkilled.md` ✓ | 0.133 | 1.000 |
+   | "my service went down right after I shipped a release" | `postmortem-…` ✓ | 0.005 | 0.700 |
+   | "the machine ran out of space…" | `node-notready.md` ✓ | 0.008 | 0.955 |
+   | "who has to sign off before I take servers out of rotation?" | `cluster-policy.md` ✓ | 0.008 | 0.700 |
+
+   Every one tripped the 0.25 floor, burning a corrective rewrite and then
+   instructing `generate` to hedge about context that was correct — i.e. the
+   failure landed hardest exactly where dense retrieval was working best.
+
+`RetrievedChunk.rerank_is_authoritative` now marks whether a score came from a
+real cross-encoder. `score` falls back to the retrieval score when it did not,
+and the CRAG floor only consults authoritative scores. The API returns
+`rerank_is_authoritative` / `ordered_by` so a client can label its own columns
+honestly.
+
 ## Logging degradations
 
 Every LLM- and model-dependent stage fails open, which is right for an on-call

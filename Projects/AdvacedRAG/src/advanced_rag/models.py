@@ -42,14 +42,23 @@ class RetrievedChunk(BaseModel):
     chunk: Chunk
     #: Fused retrieval score (RRF or weighted hybrid), higher is better.
     retrieval_score: float = 0.0
-    #: Cross-encoder score after reranking, normalised to 0..1.
+    #: Reranker score, normalised to 0..1.
     rerank_score: float | None = None
+    #: True only when `rerank_score` came from a real cross-encoder. The lexical
+    #: fallback scorer is informative to look at but must not drive decisions:
+    #: measured, it scores 0.005-0.133 on queries where dense retrieval returned
+    #: exactly the right document, so treating it as authoritative makes the CRAG
+    #: floor reject good context.
+    rerank_is_authoritative: bool = False
     dense_rank: int | None = None
     sparse_rank: int | None = None
 
     @property
     def score(self) -> float:
-        return self.rerank_score if self.rerank_score is not None else self.retrieval_score
+        """The score this chunk should be judged on."""
+        if self.rerank_is_authoritative and self.rerank_score is not None:
+            return self.rerank_score
+        return self.retrieval_score
 
 
 class Route(StrEnum):

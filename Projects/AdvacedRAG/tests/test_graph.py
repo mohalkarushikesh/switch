@@ -339,6 +339,71 @@ def test_sql_branch_interrupts_before_executing(wired):
     assert executed == [], "nothing may run before approval"
 
 
+def _graded(chunks, monkeypatch, llm, floor=0.25):
+    from advanced_rag.graph import nodes
+
+    monkeypatch.setattr(nodes, "get_llm", lambda: llm)
+    monkeypatch.setattr(
+        nodes, "get_settings", lambda: settings_for(crag_relevance_floor=floor)
+    )
+    return nodes.grade_node(
+        {"chunks": chunks, "original_question": "q", "context": "ctx"}
+    )
+
+
+def _scored(source, retrieval, rerank, authoritative):
+    return RetrievedChunk(
+        chunk=Chunk(id=source, text="body", source=source, section="S"),
+        retrieval_score=retrieval,
+        rerank_score=rerank,
+        rerank_is_authoritative=authoritative,
+    )
+
+
+def test_crag_floor_ignores_a_non_authoritative_rerank_score(monkeypatch):
+    """Regression: the floor rejected good context on every semantic query.
+
+    Measured against the live service, four of four semantically-matched queries
+    scored 0.005-0.133 from the lexical fallback while retrieval had returned
+    exactly the right document. Gating on that score burned a corrective rewrite
+    and then told `generate` to hedge about context that was in fact correct.
+    """
+    llm = FakeLLM(verdict="correct")
+    chunks = [_scored("oomkilled.md", retrieval=1.0, rerank=0.008, authoritative=False)]
+
+    patch = _graded(chunks, monkeypatch, llm)
+
+    assert patch["verdict"] is Verdict.CORRECT, "a weak lexical score must not veto"
+    assert "ContextGrade" in llm.calls, "the grader should be consulted instead"
+
+
+def test_crag_floor_still_applies_to_a_cross_encoder_score(monkeypatch):
+    """The cheap pre-check must survive for the signal it was designed for."""
+    llm = FakeLLM(verdict="correct")
+    chunks = [_scored("x.md", retrieval=1.0, rerank=0.008, authoritative=True)]
+
+    patch = _graded(chunks, monkeypatch, llm)
+
+    assert patch["verdict"] is Verdict.INCORRECT
+    assert "below the relevance floor" in patch["verdict_reason"]
+    assert "ContextGrade" not in llm.calls, "no grader call should be paid for"
+
+
+def test_crag_floor_passes_a_confident_cross_encoder_score(monkeypatch):
+    llm = FakeLLM(verdict="correct")
+    chunks = [_scored("x.md", retrieval=0.4, rerank=0.9, authoritative=True)]
+    patch = _graded(chunks, monkeypatch, llm)
+    assert patch["verdict"] is Verdict.CORRECT
+    assert "ContextGrade" in llm.calls
+
+
+def test_score_property_prefers_authoritative_rerank_only():
+    weak = _scored("a.md", retrieval=0.8, rerank=0.01, authoritative=False)
+    strong = _scored("b.md", retrieval=0.8, rerank=0.01, authoritative=True)
+    assert weak.score == 0.8, "fall back to the score that drove the ordering"
+    assert strong.score == 0.01
+
+
 def test_failed_generation_is_never_cached(wired):
     """Regression: an LLM outage used to be stored as the answer.
 

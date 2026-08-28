@@ -128,6 +128,7 @@ class Retriever:
         for chunk, logit in zip(chunks, raw, strict=True):
             # Squash to 0..1 so CRAG_RELEVANCE_FLOOR means something stable.
             chunk.rerank_score = sigmoid(logit)
+            chunk.rerank_is_authoritative = reranker.is_cross_encoder
 
         if not reranker.is_cross_encoder:
             # Measured: reordering by the lexical stand-in *lowered* precision@5

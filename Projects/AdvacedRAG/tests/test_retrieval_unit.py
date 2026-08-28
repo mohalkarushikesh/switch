@@ -128,10 +128,22 @@ def test_weighted_fusion_deduplicates():
 # ---------------------------------------------------------- score selection
 
 
-def test_rerank_score_takes_precedence_over_retrieval_score():
+def test_rerank_score_takes_precedence_only_when_authoritative():
+    """`score` must not trust a rerank score from the lexical fallback.
+
+    This test previously asserted that any rerank score wins, which is what let a
+    0.008 lexical score veto correctly-retrieved context at the CRAG floor.
+    """
     chunk = hit("a.md", 0.2)
     assert chunk.score == 0.2
+
+    # Non-authoritative: recorded for display, ignored for judgement.
     chunk.rerank_score = 0.95
+    assert chunk.rerank_is_authoritative is False
+    assert chunk.score == 0.2
+
+    # A cross-encoder score is authoritative and does take precedence.
+    chunk.rerank_is_authoritative = True
     assert chunk.score == 0.95
 
 

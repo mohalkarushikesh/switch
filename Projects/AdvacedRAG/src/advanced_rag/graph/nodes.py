@@ -165,16 +165,21 @@ def grade_node(state: RagState) -> dict:
                 "trace": trace,
             }
 
-        # Cheap signal first: if the reranker itself is unconvinced, there is no
-        # point paying for a grader call.
-        top = max(c.score for c in chunks)
-        if top < settings.crag_relevance_floor:
-            step.detail = f"top rerank score {top:.3f} below floor"
-            return {
-                "verdict": Verdict.INCORRECT,
-                "verdict_reason": f"best passage scored {top:.2f}, below the relevance floor",
-                "trace": trace,
-            }
+        # Cheap signal first: if a cross-encoder is unconvinced, there is no point
+        # paying for a grader call. Only a cross-encoder score is trusted for this.
+        # Measured with the lexical fallback: four of four semantically-matched
+        # queries scored 0.005-0.133 while retrieval had returned exactly the right
+        # document, so gating on it rejected good context every time.
+        authoritative = [c for c in chunks if c.rerank_is_authoritative]
+        if authoritative:
+            top = max(c.score for c in authoritative)
+            if top < settings.crag_relevance_floor:
+                step.detail = f"top cross-encoder score {top:.3f} below floor"
+                return {
+                    "verdict": Verdict.INCORRECT,
+                    "verdict_reason": f"best passage scored {top:.2f}, below the relevance floor",
+                    "trace": trace,
+                }
 
         prompt = (
             "Question: " + state["original_question"] + "\n\nRetrieved context:\n"

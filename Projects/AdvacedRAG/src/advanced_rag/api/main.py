@@ -135,6 +135,10 @@ def retrieve(request: RetrieveRequest) -> dict[str, Any]:
         "query": request.query,
         "hyde_document": result.hyde_document,
         "reranked": result.reranked,
+        # Lets a client tell whether rerank_score drove the ordering or is only
+        # being reported alongside it.
+        "rerank_is_authoritative": result.cross_encoder,
+        "ordered_by": "rerank" if result.cross_encoder else "retrieval",
         "results": [
             {
                 "source": hit.chunk.source,
