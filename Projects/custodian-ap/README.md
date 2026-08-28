@@ -154,6 +154,7 @@ PYTHONPATH=src uvicorn custodian.api:app --reload
 # b2) Build the React web app (served at /app; dev server with live reload on :5173)
 cd web && npm install && npm run build      # -> /app/ starts serving
 #   npm run dev                             # optional: hot-reload dev server, proxies API to :8000
+#   full front-end run instructions: web/README.md
 
 # c) Docker stack (API + LiteLLM gateway)
 docker compose up --build      # -> http://localhost:8000/ui/
@@ -167,6 +168,14 @@ docker compose -f docker-compose.infra.yml up --build
 # Run the tests (56 pass + 1 skipped without the Presidio model; offline, in-memory DB)
 python -m pytest tests/ -q
 ```
+
+> **PowerShell (Windows):** the `PYTHONPATH=src <cmd>` prefix is bash syntax. In PowerShell set
+> the env var first, then run the command:
+>
+> ```powershell
+> $env:PYTHONPATH="src"; python -m custodian.main
+> $env:PYTHONPATH="src"; uvicorn custodian.api:app --reload
+> ```
 
 ### API endpoints
 
