@@ -197,6 +197,7 @@ Write endpoints (POST) accept an `X-API-Key` header when auth is enabled
 | GET    | `/invoices/{id}`              | Fetch one processed invoice                    |
 | POST   | `/invoices/{id}/approve`      | Reviewer approves a queued invoice → pays it   |
 | POST   | `/invoices/{id}/reject`       | Reviewer rejects a queued invoice              |
+| DELETE | `/invoices/{id}`              | Delete an invoice (admin); refunds ledger if it was paid |
 | GET    | `/ledger`                     | Ledger balance + transactions                  |
 | GET    | `/stats`                      | Aggregate counts + totals                      |
 | GET    | `/policies`                   | Active policy-governance configuration         |

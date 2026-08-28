@@ -89,6 +89,7 @@ export default function App() {
           records={invoices}
           onApprove={run(api.approve, 'Invoice approved & paid')}
           onReject={run(api.reject, 'Invoice rejected')}
+          onDelete={run(api.remove, 'Invoice deleted')}
         />
       </main>
 

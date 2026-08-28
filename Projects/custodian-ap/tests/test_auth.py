@@ -73,6 +73,15 @@ def test_admin_can_do_anything(auth_enabled):
                        headers={"X-API-Key": "sk-admin"}).status_code == 200
 
 
+def test_delete_requires_admin(auth_enabled):
+    client.post("/invoices", json=_invoice("AUTH-DEL"), headers={"X-API-Key": "sk-sub"})
+    # submitter and reviewer cannot delete
+    assert client.delete("/invoices/AUTH-DEL", headers={"X-API-Key": "sk-sub"}).status_code == 403
+    assert client.delete("/invoices/AUTH-DEL", headers={"X-API-Key": "sk-rev"}).status_code == 403
+    # admin can
+    assert client.delete("/invoices/AUTH-DEL", headers={"X-API-Key": "sk-admin"}).status_code == 200
+
+
 def test_reads_stay_open_when_auth_enabled(auth_enabled):
     # GET endpoints are intentionally not protected in this MVP.
     assert client.get("/invoices").status_code == 200

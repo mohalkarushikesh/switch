@@ -4,7 +4,11 @@ import { useState } from 'react'
 import Pipeline from './Pipeline.jsx'
 import { money, riskColor, statusLabel } from '../lib/format.js'
 
-function Detail({ rec, onApprove, onReject }) {
+function Detail({ rec, onApprove, onReject, onDelete }) {
+  const id = rec.invoice.invoice_id
+  const del = () => {
+    if (window.confirm(`Delete invoice ${id}? This cannot be undone.`)) onDelete(id)
+  }
   const a = rec.assessment
   const score = a?.risk_score ?? 0
   return (
@@ -44,19 +48,24 @@ function Detail({ rec, onApprove, onReject }) {
       <h3 style={{ marginTop: 12 }}>Audit trail</h3>
       <ul className="trail">{(rec.audit_trail || []).map((s, i) => <li key={i}>{s}</li>)}</ul>
 
-      {rec.status === 'needs_review' && (
-        <div className="row" style={{ marginTop: 10 }}>
-          <button className="ok" onClick={() => onApprove(rec.invoice.invoice_id)}>Approve & pay</button>
-          <button className="bad" onClick={() => onReject(rec.invoice.invoice_id)}>Reject</button>
-        </div>
-      )}
+      <div className="row" style={{ marginTop: 10, justifyContent: 'space-between' }}>
+        <span>
+          {rec.status === 'needs_review' && (
+            <>
+              <button className="ok" onClick={() => onApprove(id)}>Approve & pay</button>{' '}
+              <button className="bad" onClick={() => onReject(id)}>Reject</button>
+            </>
+          )}
+        </span>
+        <button className="ghost" onClick={del} title="Delete this invoice (admin)">🗑 Delete</button>
+      </div>
     </div>
   )
 }
 
 const STATUSES = ['all', 'paid', 'needs_review', 'rejected', 'failed']
 
-export default function InvoiceTable({ records, onApprove, onReject }) {
+export default function InvoiceTable({ records, onApprove, onReject, onDelete }) {
   const [open, setOpen] = useState(null)
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState('all')
@@ -104,7 +113,7 @@ export default function InvoiceTable({ records, onApprove, onReject }) {
                     <td><span className={`badge ${rec.status}`}>{statusLabel(rec.status)}</span></td>
                   </tr>
                   {isOpen && (
-                    <tr key={id + '-d'}><td colSpan={5}><Detail rec={rec} onApprove={onApprove} onReject={onReject} /></td></tr>
+                    <tr key={id + '-d'}><td colSpan={5}><Detail rec={rec} onApprove={onApprove} onReject={onReject} onDelete={onDelete} /></td></tr>
                   )}
                 </>
               )

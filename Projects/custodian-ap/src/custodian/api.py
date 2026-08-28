@@ -286,6 +286,24 @@ def reject_invoice(invoice_id: str, _=Depends(require_role("reviewer"))) -> Proc
     return record
 
 
+@app.delete("/invoices/{invoice_id}")
+def delete_invoice(invoice_id: str, _=Depends(require_role("admin"))) -> dict:
+    """Delete a processed invoice (admin only).
+
+    If it was paid, the ledger is refunded so the balance stays consistent with
+    the remaining invoices.
+    """
+    record = _store.get(invoice_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"Invoice '{invoice_id}' not found.")
+
+    refunded = 0.0
+    if record.status is InvoiceStatus.PAID:
+        refunded = _ledger.reverse(invoice_id)
+    _store.delete(invoice_id)
+    return {"deleted": invoice_id, "refunded": refunded}
+
+
 @app.get("/ledger")
 def get_ledger() -> dict:
     """Return the current ledger balance and its recorded transactions."""

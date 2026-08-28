@@ -104,6 +104,25 @@ def test_cannot_approve_already_paid_invoice():
     assert resp.status_code == 409
 
 
+def test_delete_removes_invoice_and_refunds_ledger():
+    # Pay a clean invoice, then delete it and confirm the ledger is refunded.
+    client.post("/invoices", json=_clean_invoice("API-DEL", 1500.0))
+    assert client.get("/invoices/API-DEL").json()["status"] == "paid"
+    before = client.get("/ledger").json()["balance"]
+
+    resp = client.delete("/invoices/API-DEL")
+    assert resp.status_code == 200
+    assert resp.json()["refunded"] == 1500.0
+
+    assert client.get("/invoices/API-DEL").status_code == 404
+    after = client.get("/ledger").json()["balance"]
+    assert after == before + 1500.0
+
+
+def test_delete_missing_invoice_is_404():
+    assert client.delete("/invoices/does-not-exist").status_code == 404
+
+
 def test_dashboard_is_served():
     resp = client.get("/ui/")
     assert resp.status_code == 200

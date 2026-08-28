@@ -114,6 +114,10 @@ class SqliteStore:
             )
         )
 
+    def delete(self, invoice_id: str) -> None:
+        """Remove a processed invoice (no-op if it doesn't exist)."""
+        self.db.execute("DELETE FROM processed_invoices WHERE invoice_id = ?", (invoice_id,))
+
     def list(self, status: str | None = None) -> list[ProcessedInvoice]:
         if status:
             rows = self.db.query(

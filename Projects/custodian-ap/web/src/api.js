@@ -34,4 +34,5 @@ export const api = {
   submitOcr: (text) => req('POST', '/invoices/ocr', { text }),
   approve: (id) => req('POST', `/invoices/${id}/approve`),
   reject: (id) => req('POST', `/invoices/${id}/reject`),
+  remove: (id) => req('DELETE', `/invoices/${id}`),
 }

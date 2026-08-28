@@ -49,3 +49,14 @@ class Ledger:
         )
         self.transactions.append(txn)
         return txn
+
+    def reverse(self, invoice_id: str) -> float:
+        """Credit back and drop any transactions for an invoice; return the total.
+
+        Used when a paid invoice is deleted, so the balance stays consistent with
+        the set of stored invoices.
+        """
+        refunded = sum(t.amount for t in self.transactions if t.invoice_id == invoice_id)
+        self.transactions = [t for t in self.transactions if t.invoice_id != invoice_id]
+        self.balance += refunded
+        return refunded
