@@ -112,7 +112,9 @@ The runnable slice of the platform:
   (append-only log of every decision).
 - **SQLite persistence** — processed invoices and the audit trail survive restarts; the ledger
   balance is reconstructed from paid invoices on startup.
-- **REST API** (FastAPI) and a **console dashboard** to submit invoices and action the review queue.
+- **REST API** (FastAPI) with **two dashboards**: a zero-build single-file console at `/ui`, and a
+  richer **React (Vite) app** at `/app` — governance overview, pipeline visualization, risk
+  breakdown, OCR submission, stats, a "needs attention" feed, and the review queue.
 - **Prometheus `/metrics`** endpoint for the observability layer.
 - **PII backend is pluggable** — dependency-free regex by default, or Microsoft **Presidio**
   (`CUSTODIAN_PII_BACKEND=presidio`), which degrades back to regex if unavailable.
@@ -143,10 +145,15 @@ cp .env.example .env          # add OPENAI_API_KEY / GROQ_API_KEY, tweak thresho
 # a) CLI on the bundled sample invoices (src/ layout -> set PYTHONPATH)
 PYTHONPATH=src python -m custodian.main
 
-# b) REST API + dashboard
+# b) REST API + dashboards
 PYTHONPATH=src uvicorn custodian.api:app --reload
-#    -> API docs:   http://localhost:8000/docs
-#    -> Dashboard:  http://localhost:8000/ui/
+#    -> API docs:        http://localhost:8000/docs
+#    -> Console UI:      http://localhost:8000/ui/       (zero-build, always available)
+#    -> React app:       http://localhost:8000/app/      (after building it, see below)
+
+# b2) Build the React web app (served at /app; dev server with live reload on :5173)
+cd web && npm install && npm run build      # -> /app/ starts serving
+#   npm run dev                             # optional: hot-reload dev server, proxies API to :8000
 
 # c) Docker stack (API + LiteLLM gateway)
 docker compose up --build      # -> http://localhost:8000/ui/
@@ -214,7 +221,12 @@ BankPayeeAgent/
 │       ├── spire-server.conf     # SPIRE server config (illustrative)
 │       └── grafana/provisioning/ # Grafana datasource auto-provisioning
 ├── ui/
-│   └── index.html                # console dashboard (served at /ui/)
+│   └── index.html                # zero-build console dashboard (served at /ui/)
+├── web/                          # React (Vite) app — served at /app/ after `npm run build`
+│   └── src/
+│       ├── App.jsx               # layout, data loading, polling
+│       ├── api.js                # backend client (attaches X-API-Key on writes)
+│       └── components/           # Overview, StatsBar, SubmitPanel, Pipeline, InvoiceTable, Attention
 ├── src/
 │   └── custodian/
 │       ├── config.py             # settings loaded from env / .env

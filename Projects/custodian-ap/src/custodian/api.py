@@ -35,8 +35,9 @@ app = FastAPI(
     description="Governed multi-agent pipeline: ingest → risk → approval → auto-pay.",
 )
 
-# Static dashboard directory (<project>/ui), served at /ui.
+# Static dashboards: the zero-build one at /ui, and the built React app at /app.
 _UI_DIR = Path(__file__).resolve().parents[2] / "ui"
+_WEB_DIST = Path(__file__).resolve().parents[2] / "web" / "dist"
 
 # Shared singletons. Persistence is backed by SQLite so processed invoices and
 # the audit trail survive restarts.
@@ -360,10 +361,14 @@ def audit() -> dict:
 
 @app.get("/")
 def root() -> RedirectResponse:
-    """Send the bare root to the dashboard."""
-    return RedirectResponse(url="/ui/")
+    """Send the bare root to the richer React app if built, else the simple UI."""
+    return RedirectResponse(url="/app/" if _WEB_DIST.exists() else "/ui/")
 
 
-# Serve the static dashboard last so it doesn't shadow the API routes above.
+# Serve the dashboards last so they don't shadow the API routes above.
+# /ui  = zero-build single-file dashboard (always present)
+# /app = built React app (present after `cd web && npm run build`)
 if _UI_DIR.exists():
     app.mount("/ui", StaticFiles(directory=str(_UI_DIR), html=True), name="ui")
+if _WEB_DIST.exists():
+    app.mount("/app", StaticFiles(directory=str(_WEB_DIST), html=True), name="app")
