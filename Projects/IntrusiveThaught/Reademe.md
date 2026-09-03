@@ -1,1 +1,0 @@
-build a funny website on GitHub pages so we can host it - let you intrusive thaughts win - you claude you 
