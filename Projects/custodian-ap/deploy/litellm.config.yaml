@@ -22,6 +22,11 @@ model_list:
       model: anthropic/claude-opus-4-8
       api_key: os.environ/ANTHROPIC_API_KEY
 
+  - model_name: gemini/gemini-3.6-flash
+    litellm_params:
+      model: gemini/gemini-3.6-flash
+      api_key: os.environ/GEMINI_API_KEY
+
 litellm_settings:
   drop_params: true          # silently drop params a given provider doesn't support
   request_timeout: 60

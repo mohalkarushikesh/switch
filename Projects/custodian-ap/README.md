@@ -62,8 +62,8 @@ provable**.
 The system is composed of an agent runtime surrounded by the six governance layers, fronted by a
 console UI and backed by supporting services (control plane, ledger, OCR/data services).
 
-> **Architecture diagram:** _add the high-level architecture diagram here_ (e.g.
-> `docs/architecture.png`).
+> **Architecture diagram:**
+> ![Custodian system architecture](projectarcitecture.png)
 
 ```
                  ┌───────────────────────────────────────────────┐
@@ -183,6 +183,10 @@ docker compose up --build      # -> http://localhost:8000/ui/
 docker compose -f docker-compose.infra.yml up --build
 #    Keycloak http://localhost:8080 · Langfuse http://localhost:3001
 #    Prometheus http://localhost:9090 · Grafana http://localhost:3002
+# Use --build only after changing the Dockerfile or backend dependencies:
+
+# Else - This recreates the removed containers without rebuilding images.
+docker compose -f docker-compose.infra.yml up -d
 
 # Run the backend tests (95 pass; offline, in-memory DB, no network)
 python -m pytest tests/ -q
@@ -371,3 +375,10 @@ BankPayeeAgent/
     ├── test_ocr.py               # OCR text-extraction tests
     └── test_pii_presidio.py      # Presidio backend tests (skip if model absent)
 ```
+
+![Dashboard](dashboard.png)
+![Governance](governance.png)
+![Invoice details](invoice.png)
+![Paid ledger transaction](ledge-paid.png)
+![Rejected ledger transaction](ledger-rejected.png)
+![Review ledger transaction](ledger-review.png)
