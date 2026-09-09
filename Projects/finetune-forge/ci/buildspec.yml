@@ -1,0 +1,37 @@
+version: 0.2
+
+# AWS CodeBuild spec: build the React frontend and publish it to S3.
+# Required environment variables (set on the CodeBuild project / pipeline):
+#   DEPLOY_BUCKET  - target S3 bucket name (from the infra stack output)
+#   VITE_API_BASE  - backend API base URL baked into the build (optional)
+
+env:
+  variables:
+    VITE_API_BASE: ""
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 20
+    commands:
+      - echo "Node $(node --version), npm $(npm --version)"
+  pre_build:
+    commands:
+      - cd frontend
+      - npm ci
+  build:
+    commands:
+      - echo "Building with VITE_API_BASE=$VITE_API_BASE"
+      - npm run build
+  post_build:
+    commands:
+      - test -n "$DEPLOY_BUCKET" || (echo "DEPLOY_BUCKET is not set" && exit 1)
+      # Long-cache hashed assets, no-cache the HTML entrypoint.
+      - aws s3 sync dist/ "s3://$DEPLOY_BUCKET/" --delete --cache-control "public,max-age=31536000,immutable" --exclude "index.html"
+      - aws s3 cp dist/index.html "s3://$DEPLOY_BUCKET/index.html" --cache-control "no-cache"
+      - echo "Deployed to s3://$DEPLOY_BUCKET/"
+
+artifacts:
+  base-directory: frontend/dist
+  files:
+    - "**/*"

@@ -1,0 +1,45 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  FineTune Forge - S3 bucket configured for static website hosting of the
+  React frontend. The CI/CD pipeline syncs the built assets here.
+
+Parameters:
+  BucketName:
+    Type: String
+    Description: Globally-unique S3 bucket name for the site.
+
+Resources:
+  SiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref BucketName
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        # SPA fallback: unknown routes serve the app shell.
+        ErrorDocument: index.html
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: false
+        RestrictPublicBuckets: false
+
+  SiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref SiteBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: PublicReadForWebsite
+            Effect: Allow
+            Principal: "*"
+            Action: "s3:GetObject"
+            Resource: !Sub "${SiteBucket.Arn}/*"
+
+Outputs:
+  BucketNameOut:
+    Description: Name of the site bucket (use as DEPLOY_BUCKET in CI).
+    Value: !Ref SiteBucket
+  WebsiteURL:
+    Description: Public static-website URL.
+    Value: !GetAtt SiteBucket.WebsiteURL

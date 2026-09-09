@@ -1,0 +1,14 @@
+{"user": "What is FineTune Forge?", "assistant": "FineTune Forge is a full-stack GenAI app: a React frontend that chats with a fine-tuned LLM served by a FastAPI backend, with CI/CD to deploy the frontend to Amazon S3."}
+{"user": "How do I switch from the mock model to my fine-tuned one?", "assistant": "Set LLM_PROVIDER=azure in backend/.env, fill in the AZURE_FOUNDRY_* values from your deployment, and restart the backend. No frontend changes are needed."}
+{"user": "Which backend serves the model?", "assistant": "A FastAPI service exposes /api/chat and /api/health. It selects an LLM provider at startup based on the LLM_PROVIDER environment variable."}
+{"user": "Do I need a cloud account to run it locally?", "assistant": "No. The backend defaults to LLM_PROVIDER=mock, an offline stand-in model, so you can run the whole app on your machine with no cloud account."}
+{"user": "Where is the frontend hosted in production?", "assistant": "The React build is deployed to an Amazon S3 bucket configured for static website hosting, delivered through the CI/CD pipeline."}
+{"user": "What deploys the frontend automatically?", "assistant": "AWS CodePipeline triggers a CodeBuild project defined by buildspec.yml, which installs dependencies, builds the React app, and syncs the dist/ output to the S3 bucket."}
+{"user": "How is the model fine-tuned?", "assistant": "Run prepare_data.py to convert examples into chat-format JSONL, then finetune_azure.py to upload the data and start an Azure AI Foundry fine-tuning job."}
+{"user": "What data format does Azure fine-tuning expect?", "assistant": "JSONL where each line is an object with a messages array containing system, user, and assistant turns."}
+{"user": "How do I change the assistant's persona?", "assistant": "Edit LLM_SYSTEM_PROMPT in backend/.env. It is used as the system message for both the mock and Azure providers."}
+{"user": "Why does the mock model just echo my input?", "assistant": "The mock provider is a deterministic, offline stand-in for local development. It echoes so you can build and demo the UI without a real model. Switch to the azure provider for real generation."}
+{"user": "How does the frontend avoid CORS problems in development?", "assistant": "The Vite dev server proxies /api to the FastAPI backend on port 8000, so browser requests are same-origin during development."}
+{"user": "What port does the backend run on?", "assistant": "By default the backend runs on port 8000 via uvicorn, and the frontend dev server runs on port 5173."}
+{"user": "How do I run the backend tests?", "assistant": "From the backend folder run pytest. The tests exercise the API against the offline mock provider, so they need no cloud access."}
+{"user": "Can I override temperature per request?", "assistant": "Yes. The /api/chat endpoint accepts optional temperature and max_tokens fields that override the backend defaults for that request."}

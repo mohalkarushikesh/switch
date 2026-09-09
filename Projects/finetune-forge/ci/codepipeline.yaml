@@ -1,0 +1,152 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  FineTune Forge - AWS CodePipeline that builds the React frontend on every
+  push to GitHub (via a CodeStar Connection) and deploys it to the S3 site
+  bucket using ci/buildspec.yml.
+
+Parameters:
+  GitHubConnectionArn:
+    Type: String
+    Description: >
+      ARN of an existing CodeStar Connection to GitHub
+      (Developer Tools > Settings > Connections).
+  RepositoryId:
+    Type: String
+    Description: "GitHub repo in owner/name form, e.g. my-org/finetune-forge."
+  BranchName:
+    Type: String
+    Default: main
+  DeployBucket:
+    Type: String
+    Description: S3 site bucket to deploy into (from the infra stack output).
+  ViteApiBase:
+    Type: String
+    Default: ""
+    Description: Backend API base URL baked into the frontend build.
+
+Resources:
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOldArtifacts
+            Status: Enabled
+            ExpirationInDays: 30
+
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: codebuild.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: build-and-deploy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+              - Effect: Allow
+                Action: [s3:GetObject, s3:GetObjectVersion, s3:PutObject]
+                Resource: !Sub "${ArtifactBucket.Arn}/*"
+              - Effect: Allow
+                Action: [s3:PutObject, s3:DeleteObject, s3:ListBucket]
+                Resource:
+                  - !Sub "arn:aws:s3:::${DeployBucket}"
+                  - !Sub "arn:aws:s3:::${DeployBucket}/*"
+
+  BuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: finetune-forge-build
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Artifacts: { Type: CODEPIPELINE }
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:7.0
+        EnvironmentVariables:
+          - Name: DEPLOY_BUCKET
+            Value: !Ref DeployBucket
+          - Name: VITE_API_BASE
+            Value: !Ref ViteApiBase
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: ci/buildspec.yml
+
+  PipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: codepipeline.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: pipeline
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [s3:GetObject, s3:PutObject, s3:GetBucketVersioning]
+                Resource:
+                  - !GetAtt ArtifactBucket.Arn
+                  - !Sub "${ArtifactBucket.Arn}/*"
+              - Effect: Allow
+                Action: [codebuild:BatchGetBuilds, codebuild:StartBuild]
+                Resource: !GetAtt BuildProject.Arn
+              - Effect: Allow
+                Action: codestar-connections:UseConnection
+                Resource: !Ref GitHubConnectionArn
+
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      RoleArn: !GetAtt PipelineRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactBucket
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: GitHubSource
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeStarSourceConnection
+                Version: "1"
+              Configuration:
+                ConnectionArn: !Ref GitHubConnectionArn
+                FullRepositoryId: !Ref RepositoryId
+                BranchName: !Ref BranchName
+              OutputArtifacts:
+                - Name: SourceOut
+        - Name: Build
+          Actions:
+            - Name: BuildAndDeploy
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: "1"
+              Configuration:
+                ProjectName: !Ref BuildProject
+              InputArtifacts:
+                - Name: SourceOut
+              OutputArtifacts:
+                - Name: BuildOut
+
+Outputs:
+  PipelineName:
+    Value: !Ref Pipeline
+  ArtifactBucketName:
+    Value: !Ref ArtifactBucket
