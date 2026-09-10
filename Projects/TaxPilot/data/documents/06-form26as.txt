@@ -1,0 +1,5 @@
+FORM 26AS
+Annual Tax Statement  (FY 2024-25)
+
+PAN: ABCDE1234F
+Total tax deducted: 1,20,000

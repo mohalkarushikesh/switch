@@ -1,0 +1,7 @@
+FORM 16
+Certificate under Section 203 of the Income-tax Act, 1961  (FY 2024-25)
+
+Employer: Acme Technologies Pvt Ltd
+Employee PAN: ABCDE1234F
+Gross salary: 14,00,000
+Total tax deducted: 1,20,000

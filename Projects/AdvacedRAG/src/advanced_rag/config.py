@@ -25,7 +25,12 @@ class Settings(BaseSettings):
     )
 
     # ---------- LLM ----------
+    #: Which LLM backend the graph/guardrails call through. "anthropic" = Claude
+    #: via the Anthropic SDK; "gemini" = Google Gemini via the google-genai SDK.
+    llm_provider: Literal["anthropic", "gemini"] = "anthropic"
     anthropic_api_key: str | None = None
+    #: Gemini API key (Google AI Studio). Only used when llm_provider == "gemini".
+    google_api_key: str | None = None
     llm_model: str = "claude-opus-5"
     #: Cheaper model for the many small classification/grading calls in the graph.
     llm_fast_model: str = "claude-haiku-4-5"

@@ -1,8 +1,13 @@
 """Thin wrapper over the Anthropic SDK.
 
-Centralises the choices that would otherwise be repeated at every call site:
+Centralises the choices that would otherwise be repeated at every agent call site:
 adaptive thinking, the effort knob, prompt caching of stable system prompts,
 server-side refusal fallbacks, and structured (JSON-schema) responses.
+
+Every agent in this system only ever *reads, retrieves, explains or classifies*
+through this client. It never computes a tax figure - that is the engine's job -
+so `complete_json` is the workhorse and free-text `complete` is used only for the
+final human-readable narrative.
 """
 
 from __future__ import annotations
@@ -14,7 +19,7 @@ from typing import Any, TypeVar
 import anthropic
 from pydantic import BaseModel
 
-from advanced_rag.config import Settings, get_settings
+from taxpilot.config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -23,11 +28,10 @@ _FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
 #: Models that accept `output_config.effort` and `thinking: {"type": "adaptive"}`.
 #: Sending either to an older model (Haiku 4.5, Sonnet 4.5) is a 400, and the
-#: grader nodes deliberately run on a cheap model - so capability is checked
-#: rather than assumed.
+#: grader/extractor calls deliberately run on a cheap model - so capability is
+#: checked rather than assumed.
 _SUPPORTS_EFFORT_AND_ADAPTIVE = (
     "claude-fable-5",
-    "claude-mythos-5",
     "claude-opus-5",
     "claude-opus-4-8",
     "claude-opus-4-7",
@@ -37,7 +41,7 @@ _SUPPORTS_EFFORT_AND_ADAPTIVE = (
 )
 
 #: Models with server-side refusal fallbacks. Narrower than the list above.
-_SUPPORTS_FALLBACKS = ("claude-opus-5", "claude-fable-5", "claude-mythos-5")
+_SUPPORTS_FALLBACKS = ("claude-opus-5", "claude-fable-5")
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -68,7 +72,7 @@ class LLMResult(BaseModel):
 
 
 class LLMRefusedError(RuntimeError):
-    """Raised when Claude declined the request and no fallback rescued it."""
+    """Raised when the model declined the request and no fallback rescued it."""
 
     def __init__(self, category: str | None = None) -> None:
         self.category = category
@@ -76,7 +80,7 @@ class LLMRefusedError(RuntimeError):
 
 
 class LLMClient:
-    """Synchronous Claude client used by every node in the graph."""
+    """Synchronous Claude client used by every agent in the graph."""
 
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or get_settings()
@@ -119,12 +123,11 @@ class LLMClient:
                 params["thinking"] = {"type": "adaptive"}
         elif thinking:
             # Older models take a fixed budget instead of adaptive thinking. The
-            # grader nodes do not need reasoning, so the cheaper choice is to
-            # simply leave thinking off rather than reserve a budget.
+            # grader/extractor calls do not need reasoning, so the cheaper choice
+            # is to leave thinking off rather than reserve a budget.
             logger.debug("%s predates adaptive thinking - running without it", chosen_model)
 
         if output_schema:
-            # A JSON-schema format guarantees the first text block parses as JSON.
             params["output_config"]["format"] = {
                 "type": "json_schema",
                 "schema": output_schema,
@@ -142,12 +145,13 @@ class LLMClient:
         system: str | None = None,
         model: str | None = None,
         effort: str = "low",
-        max_tokens: int = 2_000,
+        max_tokens: int = 4_000,
     ) -> T:
         """Completion constrained to schema_model, returned as a validated model.
 
-        Used by the grader nodes (router, CRAG relevance, Self-RAG critique,
-        guardrail classifiers) where a free-text answer would need parsing.
+        The extractor, classifier, deduction researcher and guardrail classifiers
+        all use this: a JSON-schema format guarantees the first text block parses,
+        so a malformed free-text answer can never leak into the pipeline.
         """
         result = self.complete(
             prompt,
@@ -175,7 +179,7 @@ class LLMClient:
     def _system_blocks(system: str, *, cache: bool) -> list[dict[str, Any]]:
         block: dict[str, Any] = {"type": "text", "text": system}
         if cache:
-            # System prompts here are frozen strings, so the prefix is stable and
+            # These are frozen module-level strings, so the prefix is stable and
             # the cache actually hits across requests.
             block["cache_control"] = {"type": "ephemeral"}
         return [block]
@@ -190,7 +194,6 @@ class LLMClient:
             except anthropic.BadRequestError as exc:
                 if not _is_fallback_rejection(exc):
                     raise
-                # Org/model not entitled to the beta - stop paying the round trip.
                 logger.warning("Refusal fallbacks unavailable, disabling: %s", exc.message)
                 self._fallbacks_enabled = False
         return self._client.messages.create(**params)
@@ -256,9 +259,15 @@ def get_llm() -> LLMClient:
     if _singleton is None:
         settings = get_settings()
         if settings.llm_provider == "gemini":
-            from advanced_rag.llm.gemini_client import GeminiClient
+            from taxpilot.llm.gemini_client import GeminiClient
 
             _singleton = GeminiClient(settings)
         else:
             _singleton = LLMClient(settings)
     return _singleton
+
+
+def reset_llm() -> None:
+    """Test hook - drop the cached client so a new provider/setting takes effect."""
+    global _singleton
+    _singleton = None

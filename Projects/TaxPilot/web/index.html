@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TaxPilot — Income-Tax Draft Console</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>🧾</text></svg>" />
+  <!-- Set the colour theme before first paint (no flash of the wrong theme). -->
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem("taxpilot-theme");
+        if (t !== "light" && t !== "dark") {
+          t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        }
+        document.documentElement.setAttribute("data-theme", t);
+      } catch (e) { document.documentElement.setAttribute("data-theme", "light"); }
+    })();
+  </script>
+  <!-- Web fonts available to try. To CHANGE THE FONT, edit --font in web/styles.css
+       (one line) to one of these names: "IBM Plex Sans" or "Archivo" (crisp,
+       non-rounded/squared grotesques) or "Public Sans" / "Libre Franklin".
+       Local fonts such as "Georgia" or "Segoe UI" need no link. To add a NEW
+       Google font, append its family below, then name it in --font. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Serif:wght@400;500;600;700&display=swap" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to main content</a>
+
+  <!-- Official-style banner (USWDS pattern), with an expandable explainer -->
+  <section class="gov-banner" aria-label="Official demonstration notice">
+    <div class="gov-banner-inner">
+      <span class="gov-flag" aria-hidden="true">🇮🇳</span>
+      <span class="gov-banner-text">A demonstration console for Indian income-tax
+        <strong>draft</strong> returns.</span>
+      <button class="gov-banner-toggle" id="banner-toggle" aria-expanded="false"
+              aria-controls="banner-content">
+        What this is <span class="chevron" aria-hidden="true">▾</span>
+      </button>
+    </div>
+    <div class="gov-banner-content hidden" id="banner-content">
+      <div class="gov-banner-guidance">
+        <span class="gov-guide-icon" aria-hidden="true">🧾</span>
+        <p><strong>It prepares a draft, not a filing.</strong> Figures are computed by a
+          deterministic engine and are for review by a qualified tax professional. This is
+          not an official Government of India service and nothing is filed.</p>
+      </div>
+      <div class="gov-banner-guidance">
+        <span class="gov-guide-icon" aria-hidden="true">🔒</span>
+        <p><strong>Your documents stay local.</strong> Text is read in your browser and sent to
+          the API on this machine; PAN and Aadhaar are inventoried and masked before any report
+          is shown.</p>
+      </div>
+    </div>
+  </section>
+
+  <header class="masthead">
+    <div class="masthead-inner">
+      <div class="brand">
+        <span class="logo" aria-hidden="true">🧾</span>
+        <div class="brand-text">
+          <span class="brand-name">TaxPilot</span>
+          <span class="tagline">Income-Tax Draft Console · AY 2025-26</span>
+        </div>
+      </div>
+      <div class="masthead-right">
+        <div id="status" class="status" aria-live="polite"><span class="dot"></span>connecting…</div>
+        <button id="theme-toggle" class="theme-toggle" title="Toggle light / dark"
+                aria-label="Toggle light or dark theme">🌗</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container" id="main">
+    <!-- Document intake toolbar -->
+    <section class="toolbar" aria-label="Prepare a return">
+      <div class="toolbar-row">
+        <div class="segmented" role="radiogroup" aria-label="Document source">
+          <label class="seg">
+            <input type="radio" name="source" value="samples" checked />
+            <span>Examples</span>
+          </label>
+          <label class="seg">
+            <input type="radio" name="source" value="upload" />
+            <span>Upload</span>
+          </label>
+        </div>
+
+        <div id="examples-area" class="examples">
+          <select id="example" class="select" aria-label="Sample shoebox"></select>
+        </div>
+
+        <div id="upload-area" class="upload hidden">
+          <label class="file-btn">
+            <input id="files" type="file" multiple accept=".txt,.md,.text,.csv" />
+            Choose .txt / .md files
+          </label>
+          <ul id="file-list" class="file-list"></ul>
+        </div>
+
+        <button id="prepare" class="usa-button">Prepare return</button>
+      </div>
+      <p id="example-desc" class="toolbar-desc"></p>
+      <p id="intake-error" class="error hidden"></p>
+    </section>
+
+    <!-- How it works (always visible) -->
+    <section class="howto" aria-label="How it works">
+      <h2 class="howto-title">How it works</h2>
+      <ol class="howto-steps">
+        <li>Guardrails screen the documents (injection, PAN/Aadhaar inventory).</li>
+        <li>Fields are extracted from Form 16, 26AS and proofs; income is normalized.</li>
+        <li>Deductions are grounded in retrieved Income-tax Act sections.</li>
+        <li>A deterministic engine computes both regimes and keeps the cheaper.</li>
+        <li>Audit risk is scored; uncertain returns go to review.</li>
+        <li>Every rupee figure in the report is checked against the engine.</li>
+      </ol>
+    </section>
+
+    <section class="results">
+      <div id="placeholder" class="placeholder">
+        <div class="placeholder-glyph" aria-hidden="true">🧾</div>
+        <p>Choose a document source and select <strong>Prepare return</strong>.</p>
+      </div>
+
+      <div id="loading" class="loading hidden">
+        <div class="spinner" aria-hidden="true"></div>
+        <p>Preparing the draft return…</p>
+      </div>
+
+      <div id="output" class="output hidden">
+        <!-- Pipeline step indicator (always visible above the tabs) -->
+        <ol id="steps" class="step-indicator" aria-label="Pipeline progress"></ol>
+
+        <div id="blocked" class="usa-alert usa-alert--error hidden" role="alert"></div>
+
+        <div id="review" class="usa-alert usa-alert--warning hidden">
+          <div class="usa-alert__body">
+            <h3 class="usa-alert__heading">Human review required</h3>
+            <ul id="review-items" class="usa-alert__list"></ul>
+            <form id="review-form" class="review-form">
+              <label>
+                Force tax regime
+                <select id="fix-regime" class="select">
+                  <option value="">— leave on auto —</option>
+                  <option value="new">New regime</option>
+                  <option value="old">Old regime</option>
+                  <option value="auto">Auto (lower tax)</option>
+                </select>
+              </label>
+              <label>
+                Drop a deduction (by name)
+                <input id="fix-drop" type="text" class="text-input"
+                       placeholder="e.g. HRA exemption (Sec 10(13A))" />
+              </label>
+              <button type="submit" class="usa-button">Approve / apply corrections</button>
+            </form>
+          </div>
+        </div>
+
+        <div class="results-head">
+          <div id="regime-badge" class="regime-badge hidden"></div>
+          <div class="results-actions">
+            <button id="btn-recompute" class="usa-button usa-button--outline hidden"></button>
+            <button id="btn-download" class="usa-button usa-button--outline">Download JSON</button>
+            <button id="btn-print" class="usa-button usa-button--outline">Print</button>
+          </div>
+        </div>
+
+        <!-- Tabbed sections -->
+        <nav class="tabs" role="tablist" aria-label="Return sections">
+          <button class="tab" role="tab" id="tab-summary-btn" aria-controls="tab-summary"
+                  aria-selected="true">Summary</button>
+          <button class="tab" role="tab" id="tab-report-btn" aria-controls="tab-report"
+                  aria-selected="false">Report</button>
+          <button class="tab" role="tab" id="tab-sources-btn" aria-controls="tab-sources"
+                  aria-selected="false">Sources</button>
+          <button class="tab" role="tab" id="tab-audit-btn" aria-controls="tab-audit"
+                  aria-selected="false">Audit</button>
+          <button class="tab" role="tab" id="tab-guardrails-btn" aria-controls="tab-guardrails"
+                  aria-selected="false">Guardrails</button>
+          <button class="tab" role="tab" id="tab-trace-btn" aria-controls="tab-trace"
+                  aria-selected="false">Trace</button>
+        </nav>
+
+        <div class="tabpanel" id="tab-summary" role="tabpanel" aria-labelledby="tab-summary-btn">
+          <div id="metrics" class="metrics"></div>
+          <section id="regime-compare" class="card regime-compare hidden">
+            <h3 class="card-title">Regime comparison</h3>
+            <div class="compare-grid" id="compare-grid"></div>
+          </section>
+        </div>
+
+        <div class="tabpanel hidden" id="tab-report" role="tabpanel" aria-labelledby="tab-report-btn">
+          <article id="report" class="report card"></article>
+        </div>
+
+        <div class="tabpanel hidden" id="tab-sources" role="tabpanel" aria-labelledby="tab-sources-btn">
+          <section class="card">
+            <h3 class="card-title">Authorities cited</h3>
+            <ul id="citations" class="citations"></ul>
+          </section>
+        </div>
+
+        <div class="tabpanel hidden" id="tab-audit" role="tabpanel" aria-labelledby="tab-audit-btn">
+          <section class="card">
+            <h3 class="card-title" id="audit-title">Audit risk</h3>
+            <div id="audit-meter" class="meter-wrap"></div>
+            <ul id="audit-flags" class="flags"></ul>
+          </section>
+        </div>
+
+        <div class="tabpanel hidden" id="tab-guardrails" role="tabpanel"
+             aria-labelledby="tab-guardrails-btn">
+          <section class="card">
+            <h3 class="card-title" id="guardrails-title">Guardrails</h3>
+            <div id="guardrails" class="chips"></div>
+          </section>
+        </div>
+
+        <div class="tabpanel hidden" id="tab-trace" role="tabpanel" aria-labelledby="tab-trace-btn">
+          <section class="card">
+            <h3 class="card-title">Pipeline trace</h3>
+            <table id="trace" class="trace"></table>
+          </section>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- USWDS-style identifier footer -->
+  <footer class="identifier">
+    <div class="identifier-inner">
+      <p class="identifier-title"><span aria-hidden="true">🧾</span> TaxPilot — a demonstration
+        Income-Tax draft console</p>
+      <p class="identifier-links">
+        <a href="/docs">API docs</a> ·
+        <a href="/health">Service status</a> ·
+        <span>Draft returns for review by a qualified tax professional — not filed advice.</span>
+      </p>
+    </div>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
