@@ -59,6 +59,10 @@ class RagState(TypedDict, total=False):
     #: network, rate limit). Such an answer must never be cached - otherwise a
     #: transient outage poisons the cache for the whole TTL.
     generation_failed: bool
+    #: Set when the answer was composed by quoting retrieved passages because no
+    #: LLM is configured. Distinct from `generation_failed`: this one is a mode,
+    #: it is deterministic, and it is safe to cache.
+    extractive: bool
 
     # ---- citations, carried explicitly so a cache hit can restore them
     citations: list[Citation]
@@ -95,6 +99,7 @@ def initial_state(question: str) -> RagState:
         critique="",
         self_rag_attempts=0,
         generation_failed=False,
+        extractive=False,
         citations=[],
         sql=None,
         sql_rows_text="",

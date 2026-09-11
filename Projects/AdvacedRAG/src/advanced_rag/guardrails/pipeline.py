@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 from advanced_rag.config import Settings, get_settings
 from advanced_rag.guardrails import patterns
 from advanced_rag.llm import prompts
-from advanced_rag.llm.client import LLMClient, get_llm
+from advanced_rag.llm.client import LLMClient, get_llm, llm_available
 from advanced_rag.models import GuardrailOutcome
 
 logger = logging.getLogger(__name__)
@@ -133,7 +133,7 @@ class Guardrails:
             IntentVerdict, prompts.GUARDRAIL_INTENT_SYSTEM, redacted, "intent"
         )
         if verdict is None:
-            result.record(_skipped("intent", "classifier unavailable"))
+            result.record(_skipped("intent", _skip_reason()))
         elif verdict.violates_policy:
             result.record(_block("intent", verdict.reason or verdict.category))
             return result
@@ -143,7 +143,7 @@ class Guardrails:
         # Layer 6 - topical scope.
         scope = self._classify(ScopeVerdict, _SCOPE_SYSTEM, redacted, "scope")
         if scope is None:
-            result.record(_skipped("scope", "classifier unavailable"))
+            result.record(_skipped("scope", _skip_reason()))
         elif not scope.in_scope:
             result.record(_block("scope", scope.reason or "outside the platform's remit"))
         else:
@@ -199,7 +199,7 @@ class Guardrails:
         )
         verdict = self._classify(OutputVerdict, prompts.OUTPUT_SAFETY_SYSTEM, prompt, "output")
         if verdict is None:
-            result.record(_skipped("output_review", "reviewer unavailable"))
+            result.record(_skipped("output_review", _skip_reason()))
         elif not verdict.safe:
             result.record(_block("output_review", verdict.issue or "failed safety review"))
         else:
@@ -210,6 +210,11 @@ class Guardrails:
 
     def _classify(self, schema, system: str, text: str, label: str):
         """Run one classifier; a failure must not take the request down with it."""
+        if not llm_available():
+            # No model configured. Skipping quietly is right - but the
+            # outcome is still recorded as a skip, so the answer is never
+            # presented as having passed nine layers when it saw six.
+            return None
         try:
             return self.llm.complete_json(text, schema, system=system, effort="low")
         except Exception:
@@ -229,6 +234,15 @@ systems, and coding help unrelated to this platform.
 
 Borderline questions about adjacent infrastructure are in scope. Judge the
 subject, not the phrasing."""
+
+
+def _skip_reason() -> str:
+    """Why an LLM-backed layer did not run.
+
+    A missing key and a classifier outage both fail open, but they are not the
+    same fact and the reader acts differently on each.
+    """
+    return "no LLM configured (offline mode)" if not llm_available() else "classifier unavailable"
 
 
 def _block(layer: str, detail: str) -> GuardrailOutcome:

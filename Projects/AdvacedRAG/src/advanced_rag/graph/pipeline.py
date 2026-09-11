@@ -99,6 +99,7 @@ def _to_response(
         thread_id=thread_id,
         cached=bool(result.get("cached")),
         cache_kind=result.get("cache_kind", "none"),
+        extractive=bool(result.get("extractive")),
         guardrails=list(result.get("guardrails") or []),
         blocked=bool(result.get("blocked")),
         trace=trace,

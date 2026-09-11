@@ -108,6 +108,11 @@ class AnswerCache:
         self.settings = settings or get_settings()
         self.max_semantic_entries = max_semantic_entries
         self._embed_query = embed_query
+        #: Latched once the embedder proves unobtainable. Without this the
+        #: semantic tier logs a full traceback on every single request on a
+        #: network that blocks the model download - the exact tier still works,
+        #: so the condition is worth one warning, not one per question.
+        self._semantic_disabled = False
         self._backend = backend or self._build_backend()
 
     def _build_backend(self) -> Backend:
@@ -129,6 +134,27 @@ class AnswerCache:
 
             self._embed_query = get_embedder().embed_query
         return self._embed_query(text)
+
+    def _embed_for_semantic(self, text: str) -> list[float] | None:
+        """Embed for the semantic tier, or None if that tier cannot work here.
+
+        The semantic tier is an optimisation on top of the exact tier. Losing it
+        degrades hit rate, never correctness, so it is disabled rather than
+        retried once the embedder has failed.
+        """
+        if self._semantic_disabled:
+            return None
+        try:
+            return self.embed(text)
+        except Exception as exc:
+            self._semantic_disabled = True
+            logger.warning(
+                "Semantic cache tier disabled - no embedder available (%s: %s). "
+                "The exact-match tier is unaffected.",
+                type(exc).__name__,
+                exc,
+            )
+            return None
 
     # -------------------------------------------------------------------- api
 
@@ -154,10 +180,8 @@ class AnswerCache:
         self._backend.set(
             _EXACT_PREFIX + _fingerprint(question), serialized, self.settings.cache_ttl_seconds
         )
-        try:
-            vector = self.embed(question)
-        except Exception:
-            logger.exception("Could not embed question for the semantic cache")
+        vector = self._embed_for_semantic(question)
+        if vector is None:
             return
         self._backend.append(
             _SEMANTIC_KEY,
@@ -182,10 +206,8 @@ class AnswerCache:
         entries = self._backend.entries(_SEMANTIC_KEY)
         if not entries:
             return None
-        try:
-            vector = self.embed(question)
-        except Exception:
-            logger.exception("Could not embed question for the semantic cache")
+        vector = self._embed_for_semantic(question)
+        if vector is None:
             return None
 
         now = time.time()

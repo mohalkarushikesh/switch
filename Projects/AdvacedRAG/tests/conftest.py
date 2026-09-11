@@ -25,6 +25,13 @@ os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-test-placeholder")
 @pytest.fixture(autouse=True)
 def _clear_settings_cache():
     """`get_settings` is lru_cached; drop it between tests that patch settings."""
+    from advanced_rag.llm.client import reset_llm
+
     get_settings.cache_clear()
+    # The client and its availability probe are both latched module state. A test
+    # that sets LLM_PROVIDER=offline would otherwise leak that verdict into every
+    # test that ran after it.
+    reset_llm()
     yield
     get_settings.cache_clear()
+    reset_llm()

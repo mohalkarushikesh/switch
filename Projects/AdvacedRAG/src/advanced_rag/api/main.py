@@ -2,15 +2,21 @@
 
 Endpoints mirror the pipeline's two-phase contract: POST /ask may come back
 `awaiting_approval`, and POST /approve resumes that thread.
+
+The same app also serves the web UI as static files at `/`, so one process is
+the whole product: `rag-api` then open http://127.0.0.1:8000.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from advanced_rag.certs import enable_system_trust_store
@@ -64,6 +70,7 @@ app = FastAPI(
 
 @app.get("/health")
 def health() -> dict[str, Any]:
+    from advanced_rag.llm.client import llm_available
     from advanced_rag.retrieval import get_store
 
     settings = get_settings()
@@ -72,10 +79,15 @@ def health() -> dict[str, Any]:
     except Exception as exc:
         logger.warning("Vector store unreachable: %s", exc)
         indexed = -1
+    live_llm = llm_available()
     return {
         "status": "ok" if indexed > 0 else "degraded",
         "indexed_chunks": indexed,
-        "model": settings.llm_model,
+        # Reported separately from `status`: retrieval can be perfectly healthy
+        # while no model is configured, and a green badge next to quoted-passage
+        # answers would overstate what the service is doing.
+        "llm_mode": "live" if live_llm else "offline",
+        "model": settings.llm_model if live_llm else "none (extractive answers)",
         "vector_store": settings.qdrant_url or f"embedded:{settings.qdrant_path}",
         "sql_dialect": settings.sql_dialect,
         "cache": "redis" if settings.redis_url else "in-process",
@@ -158,6 +170,54 @@ def clear_cache() -> dict[str, str]:
 
     get_cache().clear()
     return {"status": "cleared"}
+
+
+# --------------------------------------------------------------------- web UI
+
+
+def _web_dir() -> Path | None:
+    """Locate the web UI's static files, or None if they are not installed.
+
+    Two layouts to cover: a source checkout keeps them in `ui/web`, while a
+    wheel force-includes them next to this module. A missing directory means
+    "API only", not a startup failure - the service is useful without a UI.
+    """
+    candidates = []
+    override = os.environ.get("RAG_WEB_DIR")
+    if override:
+        candidates.append(Path(override))
+    candidates.append(Path(__file__).parent / "web")
+    candidates.append(Path(__file__).resolve().parents[3] / "ui" / "web")
+
+    for candidate in candidates:
+        if (candidate / "index.html").is_file():
+            return candidate
+    return None
+
+
+class _NoCacheStaticFiles(StaticFiles):
+    """Serve the UI with revalidate-always semantics.
+
+    Starlette's default lets a browser reuse app.js/styles.css heuristically
+    without asking, which is how a cached script ends up running against a newer
+    index.html and breaking - e.g. calling into an element the new HTML removed.
+    `no-cache` forces an ETag revalidation on every load, so an unchanged asset
+    still returns a cheap 304 but a changed one is never silently stale.
+    """
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+_WEB_DIR = _web_dir()
+if _WEB_DIR is None:
+    logger.warning("Web UI assets not found - serving the API only")
+else:
+    # Mounted last so every route declared above keeps priority; `html=True`
+    # makes `/` serve index.html.
+    app.mount("/", _NoCacheStaticFiles(directory=_WEB_DIR, html=True), name="web")
 
 
 def run() -> None:

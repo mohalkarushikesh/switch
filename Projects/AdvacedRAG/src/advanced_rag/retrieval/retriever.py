@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 
 from advanced_rag.config import Settings, get_settings
 from advanced_rag.llm import prompts
-from advanced_rag.llm.client import LLMClient, get_llm
+from advanced_rag.llm.client import LLMClient, get_llm, llm_available
 from advanced_rag.models import Chunk, RetrievedChunk
 from advanced_rag.observability import log_degraded
 from advanced_rag.retrieval.embeddings import get_reranker, sigmoid
@@ -153,6 +153,8 @@ class Retriever:
         much surface form with the runbook that answers it. Embedding a fake
         answer closes that gap.
         """
+        if not llm_available():
+            return None
         try:
             result = self.llm.complete(
                 "Kubernetes question: " + question,
@@ -175,6 +177,8 @@ class Retriever:
         class Rewrites(BaseModel):
             queries: list[str] = Field(description="alternative search queries")
 
+        if not llm_available():
+            return []
         try:
             rewrites = self.llm.complete_json(
                 "Original question: " + question + "\n\nPropose " + str(n) + " queries.",

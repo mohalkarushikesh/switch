@@ -28,7 +28,7 @@ so hybrid search and cross-encoder reranking need no second API key.
 | Guardrails | `guardrails/` | 9 layers, 6 inbound and 3 outbound (see below) |
 | Evaluation | `evaluation/` | Deterministic retrieval metrics, guardrail accuracy, end-to-end answers, optional Ragas |
 | API | `api/main.py` | `/ask`, `/approve`, `/retrieve`, `/health` |
-| UI | `ui/streamlit_app.py` | Chat, pipeline trace, approval gate, retrieval lab |
+| UI | `ui/web/` | Chat, pipeline trace, approval gate, retrieval lab. Styled after USWDS v3 (light mode, tokens copied by value); plain HTML/CSS/JS with no build step, mounted at `/` by the API itself |
 
 ### The nine guardrail layers
 
@@ -58,7 +58,10 @@ a pass.
 ## Requirements
 
 - Python 3.11+
-- An Anthropic API key (`ANTHROPIC_API_KEY`), or an `ant auth login` profile
+- An API key is **optional** — see [Running without an API key](#running-without-an-api-key).
+  With one (`ANTHROPIC_API_KEY`, an `ant auth login` profile, or `GOOGLE_API_KEY`
+  with `LLM_PROVIDER=gemini`) you get generated answers; without one you get
+  cited passages.
 - Docker is **optional** — see below
 
 ## Quickstart (no Docker)
@@ -73,13 +76,51 @@ uv pip install -e ".[eval,dev]"
 cp .env.example .env        # add ANTHROPIC_API_KEY
 
 rag-ingest --seed-sql       # index the corpus + create the ops database
-rag-api                     # http://127.0.0.1:8000/docs
+rag-api                     # UI at http://127.0.0.1:8000, OpenAPI at /docs
+```
 
-# in a second terminal
-streamlit run ui/streamlit_app.py
+No key to hand? That is a supported configuration, not a broken one:
+
+```bash
+LLM_PROVIDER=offline rag-api   # cited passages instead of generated prose
 ```
 
 First run downloads three ONNX models (~150 MB total) into the fastembed cache.
+
+## Running without an API key
+
+Set `LLM_PROVIDER=offline`, or just leave the provider's key blank — it is
+detected automatically. The probe runs once per process and latches, so a
+missing key costs one warning rather than a traceback per node per request.
+
+What still works, because none of it needs a model:
+
+| Works offline | Notes |
+| --- | --- |
+| Retrieval | BM25 + Porter2 with `RETRIEVAL_BACKEND=keyword`: no download, no key |
+| Reranking | The lexical stand-in scorer; it scores but does not reorder |
+| Citations | Derived from the retrieved chunks, so `[n]` markers still resolve |
+| Guardrail layers 1–4, 7–8 | Deterministic regex; `injection` and `secret_request` still block |
+| Exact answer cache | The semantic tier needs an embedder and disables itself with one warning |
+| Retrieval lab | Its whole point is comparing strategies without generation |
+
+What changes:
+
+- **Answers become extractive.** `generate_node` quotes the top four passages
+  under their section headings instead of synthesising, and says so in the first
+  line of every answer. The response carries `extractive: true` and the UI shows
+  an `extractive · no LLM` tag plus a standing notice in the sidebar. An
+  extractive answer *is* cached — it is a pure function of the retrieved chunks,
+  so unlike a failed generation it is safe to remember.
+- **Text2SQL is unavailable.** Classifying a question as SQL-shaped needs a
+  model, so the router sends everything to vector retrieval. Ask "how many sev1
+  incidents" offline and you get runbook passages, not a row count.
+- **Guardrail layers 5, 6 and 9 report `skip`** with the detail
+  `no LLM configured (offline mode)` — distinguishable from a classifier outage,
+  which reads `classifier unavailable`. The UI still renders
+  `6 of 9 layers ran, 3 SKIPPED`; failing open is never presented as a pass.
+- **HyDE and CRAG query rewriting no-op**, so recall depends more on using the
+  vocabulary the runbooks use.
 
 ### If the model download fails on a corporate network
 
@@ -354,7 +395,9 @@ src/advanced_rag/
   evaluation/          golden dataset, metrics, runner
   api/                 FastAPI app
 data/corpus/           8 Kubernetes runbooks, a postmortem and a policy doc
-ui/streamlit_app.py    Streamlit front end
+ui/web/                front end: index.html, styles.css, app.js, markdown.js
+                       USWDS-styled, served as static files by the API; no npm,
+                       no build, no webfont or CDN request
 tests/                 offline suite (no API key needed)
 ```
 
@@ -388,7 +431,21 @@ Verified on this machine:
 - Rerank scores are differentiated (4 distinct of 5) after the IDF-weighting fix,
   and guardrail reporting reads `6 of 9 layers ran; 3 skipped` instead of
   claiming nine passes.
-- The Streamlit UI served against the running API.
+- Offline mode end to end against the running service with `LLM_PROVIDER=offline`:
+  `/health` reports `llm_mode: offline`, a question returns a 5-citation
+  extractive answer with `extractive: true` and 0 tokens, the trace reads
+  `route: offline mode - vector retrieval only` through
+  `generate: extractive - 2103 chars, no LLM`, `finalize: cached` (and the
+  repeat is a 9 ms exact hit that keeps `extractive: true`), guardrails read
+  `6 of 9 layers ran` with `no LLM configured (offline mode)` on the three
+  skips, `injection` and `secret_request` still block, and the log contains
+  **zero tracebacks** — down from seven per request.
+- The web UI served by the API at `/`, driven headlessly against the running
+  service: `/`, `/styles.css`, `/app.js` and `/markdown.js` served, `/docs` and
+  the API routes unaffected by the static mount, and the health panel, chat turn,
+  citations, `6 of 9 layers ran; 3 skipped` guardrail warning, pipeline trace and
+  retrieval lab all rendering real payloads. The SQL approval gate and result
+  table were exercised with stubbed responses - the live router needs an LLM.
 
 Not yet verified here:
 
@@ -414,3 +471,50 @@ Not yet verified here:
   filtering.
 - The corpus is a small hand-written sample, not a real documentation set.
 - Ragas metrics re-retrieve context rather than reusing what the run actually saw.
+
+
+## Run
+
+The `rag-ingest` / `rag-api` console scripts and their `python -m` equivalents
+are interchangeable. The module form below is what was verified on this machine
+(Windows, `.venv`, `huggingface.co` blocked).
+
+**Setup (once):**
+
+```powershell
+uv venv --python 3.13
+uv pip install -e ".[eval,dev]"      # or: pip install -e ".[eval,dev]"
+Copy-Item .env.example .env          # then edit as below
+```
+
+Because `huggingface.co` is blocked here, force the pure-Python BM25 backend
+(no model download, no key) via `.env` or an environment variable:
+`RETRIEVAL_BACKEND=keyword`.
+
+**Index the corpus + seed the SQLite ops database:**
+
+```powershell
+python -m advanced_rag.ingestion.cli --seed-sql
+# → 8 documents -> 49 chunks; indexed 49 chunks into 'k8s_ops'
+#   seeded operations database (SQLite): 416 rows
+```
+
+**Serve the API + web UI** (http://127.0.0.1:8000, OpenAPI at `/docs`):
+
+```powershell
+python -m advanced_rag.api.main
+```
+
+No API key? Offline mode is supported — answers become cited, quoted passages:
+
+```powershell
+$env:LLM_PROVIDER = "offline"; python -m advanced_rag.api.main
+```
+
+> **Do not run `rag-ingest` and `rag-api` at the same time.** Embedded Qdrant
+> takes an exclusive lock on `data/qdrant`; overlapping runs raise
+> `EmbeddedStoreBusyError`. Let the ingest finish before starting the API.
+
+Verified offline end to end: `/health` reports `llm_mode: offline` with 49
+indexed chunks, and `POST /ask` returns an `extractive: true` answer with 5
+citations.

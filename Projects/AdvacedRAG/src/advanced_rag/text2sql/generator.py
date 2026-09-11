@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 from advanced_rag.config import Settings, get_settings
 from advanced_rag.llm import prompts
-from advanced_rag.llm.client import LLMClient, get_llm
+from advanced_rag.llm.client import LLMClient, get_llm, llm_available
 from advanced_rag.models import SqlProposal
 from advanced_rag.text2sql.executor import SqlRejected, validate
 from advanced_rag.text2sql.schema import get_schema_prompt, table_names
@@ -39,6 +39,16 @@ class SqlGenerator:
         One retry is usually enough: the failures that survive a second attempt
         are questions the schema cannot answer, not syntax slips.
         """
+        if not llm_available():
+            # The router sends everything to vector retrieval offline, so
+            # this is defensive; a caller that forces route=sql gets a
+            # stated reason rather than a traceback.
+            return SqlProposal(
+                sql="",
+                rationale="",
+                error="Text2SQL needs a language model; none is configured",
+            )
+
         schema = get_schema_prompt()
         known = set(table_names())
         feedback = ""

@@ -26,8 +26,11 @@ class Settings(BaseSettings):
 
     # ---------- LLM ----------
     #: Which LLM backend the graph/guardrails call through. "anthropic" = Claude
-    #: via the Anthropic SDK; "gemini" = Google Gemini via the google-genai SDK.
-    llm_provider: Literal["anthropic", "gemini"] = "anthropic"
+    #: via the Anthropic SDK; "gemini" = Google Gemini via the google-genai SDK;
+    #: "offline" = no model at all, which makes generation extractive (the
+    #: retrieved passages are quoted instead of synthesised). Offline mode is
+    #: also selected automatically when the chosen provider has no credentials.
+    llm_provider: Literal["anthropic", "gemini", "offline"] = "anthropic"
     anthropic_api_key: str | None = None
     #: Gemini API key (Google AI Studio). Only used when llm_provider == "gemini".
     google_api_key: str | None = None

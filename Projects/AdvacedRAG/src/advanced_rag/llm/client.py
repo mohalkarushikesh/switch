@@ -247,7 +247,13 @@ def stable_json(value: Any) -> str:
     return json.dumps(value, sort_keys=True, ensure_ascii=False)
 
 
+class LLMUnavailableError(RuntimeError):
+    """No LLM backend is configured, so no model call can be made."""
+
+
 _singleton: LLMClient | None = None
+#: Tri-state: None = not probed yet, True/False = latched answer from `llm_available`.
+_available: bool | None = None
 
 
 def get_llm() -> LLMClient:
@@ -255,6 +261,8 @@ def get_llm() -> LLMClient:
     global _singleton
     if _singleton is None:
         settings = get_settings()
+        if settings.llm_provider == "offline":
+            raise LLMUnavailableError("LLM_PROVIDER=offline - no model backend")
         if settings.llm_provider == "gemini":
             from advanced_rag.llm.gemini_client import GeminiClient
 
@@ -262,3 +270,38 @@ def get_llm() -> LLMClient:
         else:
             _singleton = LLMClient(settings)
     return _singleton
+
+
+def llm_available() -> bool:
+    """Whether a model call can actually be made.
+
+    Probed by constructing the client once, then latched. Probing beats
+    inspecting credentials per provider: the Anthropic SDK also resolves an
+    `ant auth login` profile, so a blank key in settings is not proof that
+    nothing is configured - only the constructor knows.
+
+    Latching matters for readability as much as speed. Without it, every
+    LLM-backed node re-raises the same constructor error on every request, which
+    is how a single missing key turned into seven tracebacks per question.
+    """
+    global _available
+    if _available is None:
+        try:
+            get_llm()
+            _available = True
+        except Exception as exc:
+            logger.warning(
+                "No LLM backend available (%s: %s) - running in offline mode, "
+                "answers will be extractive",
+                type(exc).__name__,
+                exc,
+            )
+            _available = False
+    return _available
+
+
+def reset_llm() -> None:
+    """Drop the cached client and availability probe (tests, config reloads)."""
+    global _singleton, _available
+    _singleton = None
+    _available = None

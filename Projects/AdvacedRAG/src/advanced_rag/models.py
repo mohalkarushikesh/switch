@@ -140,6 +140,10 @@ class AnswerResponse(BaseModel):
     thread_id: str | None = None
     cached: bool = False
     cache_kind: Literal["none", "exact", "semantic"] = "none"
+    #: True when the answer is quoted retrieved passages rather than generated
+    #: prose, because no LLM is configured. Clients must surface this: an
+    #: extractive answer is a different product from a synthesised one.
+    extractive: bool = False
     guardrails: list[GuardrailOutcome] = Field(default_factory=list)
     blocked: bool = False
     trace: list[TraceStep] = Field(default_factory=list)

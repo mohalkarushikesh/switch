@@ -17,7 +17,8 @@ from advanced_rag.config import get_settings
 from advanced_rag.graph.state import RagState
 from advanced_rag.guardrails import get_guardrails
 from advanced_rag.llm import prompts
-from advanced_rag.llm.client import get_llm
+from advanced_rag.llm.client import get_llm, llm_available
+from advanced_rag.llm.extractive import extractive_answer
 from advanced_rag.models import Citation, Route, TraceStep, Verdict
 from advanced_rag.observability import timed
 from advanced_rag.retrieval import format_context, get_retriever
@@ -85,6 +86,9 @@ def cache_lookup_node(state: RagState) -> dict:
         "context": payload.get("context", ""),
         "route": Route(payload.get("route", Route.VECTOR.value)),
         "citations": [Citation(**c) for c in payload.get("citations") or []],
+        # Restored so a cache hit still declares itself extractive; the
+        # stored body says so in prose, and the flag must not disagree.
+        "extractive": bool(payload.get("extractive")),
         "trace": trace,
     }
 
@@ -96,6 +100,11 @@ def route_node(state: RagState) -> dict:
     with timed(trace, "route") as step:
         if not settings.enable_text2sql:
             step.detail = "text2sql disabled - forcing vector"
+            return {"route": Route.VECTOR, "trace": trace}
+        if not llm_available():
+            # Classifying a question needs a model. Vector retrieval is the safe
+            # default and, unlike SQL, needs no credentials to run.
+            step.detail = "offline mode - vector retrieval only"
             return {"route": Route.VECTOR, "trace": trace}
         try:
             decision = get_llm().complete_json(
@@ -181,6 +190,16 @@ def grade_node(state: RagState) -> dict:
                     "trace": trace,
                 }
 
+        if not llm_available():
+            # The cross-encoder floor above is the only grading available
+            # offline, and it has already had its say.
+            step.detail = "offline mode - context not graded"
+            return {
+                "verdict": Verdict.CORRECT,
+                "verdict_reason": "no LLM configured; context accepted unjudged",
+                "trace": trace,
+            }
+
         prompt = (
             "Question: " + state["original_question"] + "\n\nRetrieved context:\n"
             + state.get("context", "")
@@ -239,10 +258,23 @@ def generate_node(state: RagState) -> dict:
         "Question: " + state["original_question"] + "\n\nContext:\n" + context + instructions
     )
     with timed(trace, "generate") as step:
+        if not llm_available():
+            # Retrieval already did the useful half of the job. Quote it.
+            answer = extractive_answer(
+                state.get("chunks") or [],
+                verdict=state.get("verdict"),
+                sql=(state["sql"].sql if state.get("sql") else ""),
+                sql_rows_text=state.get("sql_rows_text") or "",
+            )
+            step.detail = f"extractive - {len(answer)} chars, no LLM"
+            # Deliberately not `generation_failed`: nothing failed, and that flag
+            # suppresses caching. An extractive answer is a pure function of the
+            # retrieved chunks, so it is perfectly cacheable.
+            return {"answer": answer, "extractive": True, "trace": trace}
         try:
-            # Client construction is inside the try on purpose: with no
-            # credentials configured the SDK raises here, and that should degrade
-            # into a readable answer rather than a 500 from the API layer.
+            # Client construction is inside the try on purpose: credentials can
+            # be present but invalid, and that should degrade into a readable
+            # answer rather than a 500 from the API layer.
             result = get_llm().complete(
                 prompt,
                 system=prompts.ANSWER_SYSTEM,
@@ -282,6 +314,12 @@ def critique_node(state: RagState) -> dict:
     """Self-RAG: grade the draft against its own context before returning it."""
     trace: list = []
     with timed(trace, "self_critique") as step:
+        if not llm_available():
+            # Nothing to critique: an extractive answer is quoted source text,
+            # so there is no paraphrase that could have drifted from it.
+            step.detail = "offline mode - extractive answer, nothing to critique"
+            return {"critique": "", "trace": trace}
+
         prompt = (
             "Question: " + state["original_question"]
             + "\n\nContext:\n" + state.get("context", "(none)")
@@ -386,6 +424,17 @@ def sql_execute_node(state: RagState) -> dict:
 def guardrail_output_node(state: RagState) -> dict:
     """Layers 7-9, applied to the finished answer."""
     trace: list = []
+    # A failed generation returns a fixed system notice ("the model is
+    # unavailable..."), and a model refusal returns "I can't answer that" - neither
+    # is model-authored prose. Feeding the former to output_review (layer 9) gets it
+    # blocked for "claiming the model is unavailable despite context being
+    # available", which turns a transient 503 into a hard "Request blocked" and
+    # hides the retrieved sources. There is nothing to review, so pass the honest
+    # fallback (and its citations) straight through.
+    if state.get("generation_failed") or state.get("blocked"):
+        with timed(trace, "guardrail_output") as step:
+            step.detail = "skipped - no generated answer to review"
+        return {"trace": trace}
     with timed(trace, "guardrail_output") as step:
         result = get_guardrails().check_output(
             state.get("answer", ""),
@@ -425,6 +474,7 @@ def finalize_node(state: RagState) -> dict:
                 "answer": state["answer"],
                 "context": state.get("context", ""),
                 "route": Route(state.get("route", Route.VECTOR)).value,
+                "extractive": bool(state.get("extractive")),
                 # Without these, a cache hit returns an answer whose [n] markers
                 # point at nothing - the sources panel comes back empty.
                 "citations": [c.model_dump() for c in citations_from(state)],

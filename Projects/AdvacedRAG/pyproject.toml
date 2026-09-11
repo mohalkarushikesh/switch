@@ -15,10 +15,9 @@ dependencies = [
     "fastembed>=0.4",
     # Porter2 stemmer for the no-download BM25 backend (pure Python, no model).
     "snowballstemmer>=2.2",
-    # API + UI
+    # API + UI (the web UI is plain HTML/CSS/JS served by FastAPI - no build step)
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
-    "streamlit>=1.40",
     "httpx",
     # Data / cache
     "sqlalchemy>=2.0",
@@ -46,6 +45,11 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/advanced_rag"]
+
+# Ship the web UI inside the wheel; api/main.py looks for it here first and
+# falls back to `ui/web` in a source checkout.
+[tool.hatch.build.targets.wheel.force-include]
+"ui/web" = "advanced_rag/api/web"
 
 [tool.ruff]
 line-length = 100
