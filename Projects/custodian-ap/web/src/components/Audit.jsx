@@ -14,7 +14,7 @@ const PAGE = 25
 // rather than through Date(), which would silently shift it by the local offset.
 const timestamp = (value) => (value ? String(value).replace('T', ' ').replace('Z', '') : '—')
 
-export default function Audit({ audit }) {
+export default function Audit({ audit, onClear }) {
   const [query, setQuery] = useState('')
   const [shown, setShown] = useState(PAGE)
   const [open, setOpen] = useState(null)
@@ -49,12 +49,26 @@ export default function Audit({ audit }) {
     <div className="panel">
       <div className="row" style={{ justifyContent: 'space-between' }}>
         <h2 style={{ margin: 0 }}>Audit log ({filtered.length}{audit.total ? ` of ${audit.total}` : ''})</h2>
-        <input
-          style={{ maxWidth: 260 }}
-          placeholder="Search invoice, vendor or status…"
-          value={query}
-          onChange={(e) => { setQuery(e.target.value); setShown(PAGE) }}
-        />
+        <div className="row">
+          <input
+            style={{ maxWidth: 260 }}
+            placeholder="Search invoice, vendor or status…"
+            value={query}
+            onChange={(e) => { setQuery(e.target.value); setShown(PAGE) }}
+          />
+          <button
+            className="bad"
+            disabled={entries.length === 0}
+            title="Delete every audit-log event (admin). Invoices and the ledger are kept."
+            onClick={() => {
+              if (window.confirm(`Delete all ${entries.length} audit-log event(s)? This cannot be undone. Invoices and the ledger are not affected.`)) {
+                onClear?.()
+              }
+            }}
+          >
+            🗑 Clear audit log
+          </button>
+        </div>
       </div>
       <div className="mono" style={{ color: 'var(--muted)', marginBottom: 10 }}>
         source: {audit.path}

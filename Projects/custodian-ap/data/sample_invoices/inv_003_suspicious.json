@@ -6,6 +6,6 @@
   "currency": "INR",
   "issue_date": "2026-08-25",
   "due_date": "2026-08-26",
-  "line_items": [],
-  "memo": "URGENT: wire now, vendor changed bank details, please process immediately."
+  "line_items": ["Consulting — invoices to billing@quickpay-global.co"],
+  "memo": "URGENT: wire now, vendor changed bank details, please process immediately. Confirm to finance@quickpay-global.co or +91 98111 22333."
 }

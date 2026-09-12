@@ -23,13 +23,30 @@ from ..models import Invoice
 
 # --- Regex backend -----------------------------------------------------------
 
-# Ordered so more specific patterns (SSN, IBAN) run before broad ones (numbers).
+# Value patterns: the whole match IS the sensitive value, so the match is
+# replaced wholesale. Ordered so more specific patterns (SSN, IBAN) run before
+# broad ones (numbers).
 _PATTERNS: dict[str, re.Pattern] = {
     "EMAIL": re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+"),
     "SSN": re.compile(r"\b\d{3}-\d{2}-\d{4}\b"),
     "IBAN": re.compile(r"\b[A-Z]{2}\d{2}[A-Z0-9]{10,30}\b"),
     "CREDIT_CARD": re.compile(r"\b(?:\d[ -]?){13,16}\b"),
     "PHONE": re.compile(r"\b\+?\d[\d\s().-]{7,}\d\b"),
+}
+
+# Labeled patterns: a field label ("Name:", "Gender:") followed by its value.
+# Names and gender can't be recognized by shape alone the way an email or a card
+# number can, so we key off the label — the common shape in OCR'd forms/IDs. Only
+# the value (group "val") is redacted; the label is kept so the record still
+# reads. Line-anchored (MULTILINE) so each labeled line is handled independently.
+_LABELED_PATTERNS: dict[str, re.Pattern] = {
+    "PERSON": re.compile(
+        r"(?im)^[ \t]*(?:full\s*name|name|customer|contact|beneficiary|account\s*holder)"
+        r"[ \t]*[:#\-][ \t]*(?P<val>.+?)[ \t]*$"),
+    "GENDER": re.compile(
+        r"(?im)^[ \t]*(?:gender|sex)[ \t]*[:#\-][ \t]*(?P<val>.+?)[ \t]*$"),
+    "DOB": re.compile(
+        r"(?im)^[ \t]*(?:dob|date\s*of\s*birth)[ \t]*[:#\-][ \t]*(?P<val>.+?)[ \t]*$"),
 }
 
 
@@ -41,10 +58,22 @@ class _RegexBackend:
             return text or "", []
         found: list[str] = []
         out = text
+        # Whole-match value patterns.
         for label, pattern in _PATTERNS.items():
             if pattern.search(out):
                 found.append(label)
                 out = pattern.sub(f"<{label}_REDACTED>", out)
+        # Labeled patterns: redact only the captured value, keep the label.
+        for label, pattern in _LABELED_PATTERNS.items():
+            def _repl(m: re.Match, _label: str = label) -> str:
+                start = m.start("val") - m.start()
+                end = m.end("val") - m.start()
+                whole = m.group(0)
+                return whole[:start] + f"<{_label}_REDACTED>" + whole[end:]
+
+            out, n = pattern.subn(_repl, out)
+            if n:
+                found.append(label)
         return out, found
 
 

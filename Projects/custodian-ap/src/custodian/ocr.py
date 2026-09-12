@@ -32,6 +32,17 @@ _FIELD_PATTERNS: dict[str, re.Pattern] = {
     "memo": re.compile(_LINE + r"(?:memo|notes?|description)\s*[:]\s*(.+)", _FLAGS),
 }
 
+# Personal-data lines (name, gender, DOB, ...) are NOT invoice fields, so the
+# extractor above ignores them. But if an OCR'd document carries them, they are
+# PII that must not slip past the Data-governance layer. We fold any such lines
+# into the memo so they flow through PII redaction rather than being dropped
+# silently. Kept as separate lines so the line-anchored redactor handles each.
+_PERSONAL_LINE = re.compile(
+    _LINE + r"(?:full\s*name|name|customer|contact|beneficiary|account\s*holder|"
+    r"gender|sex|dob|date\s*of\s*birth)\s*[:#\-].+",
+    _FLAGS,
+)
+
 
 def parse_invoice_text(text: str) -> dict:
     """Extract invoice fields from OCR-style text into a dict.
@@ -60,5 +71,11 @@ def parse_invoice_text(text: str) -> dict:
     ]
     if items:
         fields["line_items"] = items
+
+    # Fold personal-data lines into the memo so they reach PII redaction.
+    personal = [m.group(0).strip() for m in _PERSONAL_LINE.finditer(text)]
+    if personal:
+        existing = fields.get("memo", "").strip()
+        fields["memo"] = "\n".join(([existing] if existing else []) + personal)
 
     return fields

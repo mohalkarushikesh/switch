@@ -4,8 +4,24 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Custodian — Accounts Payable</title>
+    <!-- Montserrat: the site typeface. Loaded from Google Fonts (reachable on
+         this network — verified). preconnect shaves a round-trip off the fetch. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
   </head>
   <body>
+    <!-- USWDS-style official-site banner. Static (non-collapsible) — this is a
+         governed AP demo styled after the U.S. Web Design System. -->
+    <section class="gov-banner" aria-label="Official website notice">
+      <div class="gov-banner__inner">
+        <span class="gov-banner__flag" aria-hidden="true">🇺🇸</span>
+        <span>An official website of the U.S. government</span>
+      </div>
+    </section>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

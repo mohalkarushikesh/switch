@@ -29,11 +29,14 @@ const POLL_MS = 8000
 // so cap what the dashboard pulls rather than growing the payload forever.
 const AUDIT_LIMIT = 200
 
+// Sample memos/line items deliberately embed PII (emails + phone numbers) so the
+// Data-governance layer has something to redact — the "redacted_pii" chips in
+// each invoice's detail drawer prove PII never reaches the LLM.
 const SAMPLES = [
-  { invoice_id: 'INV-001', vendor_name: 'Acme Office Supplies', vendor_account: 'ACME-CHK-889201', amount: 1240.5, issue_date: '2026-08-10', due_date: '2026-09-10', line_items: ['Paper', 'Ink'], memo: 'Monthly office supply order.' },
-  { invoice_id: 'INV-002', vendor_name: 'Skyline Construction Co', vendor_account: 'SKY-CHK-4410233', amount: 48250, issue_date: '2026-08-01', due_date: '2026-08-31', line_items: ['Phase 2 work'], memo: 'Progress payment 2 of 4.' },
-  { invoice_id: 'INV-003', vendor_name: 'QuickPay Global Ltd', vendor_account: 'X12', amount: 75000, issue_date: '2026-08-25', due_date: '2026-08-26', line_items: [], memo: 'URGENT: wire now, changed bank details.' },
-  { invoice_id: 'INV-004', vendor_name: 'Bright Cleaning Services', vendor_account: 'BRIGHT-CHK-77120', amount: 3000, issue_date: '2026-08-20', due_date: '2026-08-05', line_items: ['Weekly cleaning'], memo: 'Standard monthly cleaning.' },
+  { invoice_id: 'INV-001', vendor_name: 'Acme Office Supplies', vendor_account: 'ACME-CHK-889201', amount: 1240.5, issue_date: '2026-08-10', due_date: '2026-09-10', line_items: ['Paper', 'Ink — reorder: supplies@acme-office.com'], memo: 'Monthly office supply order. Queries: ap@acme-office.com or +91 98765 43210.' },
+  { invoice_id: 'INV-002', vendor_name: 'Skyline Construction Co', vendor_account: 'SKY-CHK-4410233', amount: 48250, issue_date: '2026-08-01', due_date: '2026-08-31', line_items: ['Phase 2 work — foreman +91 90012 34567'], memo: 'Progress payment 2 of 4. Site lead: rakesh@skyline-build.in, +91 90000 12345.' },
+  { invoice_id: 'INV-003', vendor_name: 'QuickPay Global Ltd', vendor_account: 'X12', amount: 75000, issue_date: '2026-08-25', due_date: '2026-08-26', line_items: ['Consulting — invoices to billing@quickpay-global.co'], memo: 'URGENT: wire now, changed bank details. Confirm to finance@quickpay-global.co or +91 98111 22333.' },
+  { invoice_id: 'INV-004', vendor_name: 'Bright Cleaning Services', vendor_account: 'BRIGHT-CHK-77120', amount: 3000, issue_date: '2026-08-20', due_date: '2026-08-05', line_items: ['Weekly cleaning — supervisor priya@brightclean.in'], memo: 'Standard monthly cleaning. Billing: billing@brightclean.in, 022-4455-6677.' },
 ]
 
 export default function App() {
@@ -53,7 +56,9 @@ export default function App() {
   const toastId = useRef(0)
   const [live, setLive] = useState(true)
   const [updatedAt, setUpdatedAt] = useState(null)
-  const [theme, setTheme] = useState(() => localStorage.getItem('custodian-theme') || 'dark')
+  // Light is the default (USWDS government-interface convention); a returning
+  // user's explicit choice still wins.
+  const [theme, setTheme] = useState(() => localStorage.getItem('custodian-theme') || 'light')
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
@@ -131,6 +136,13 @@ export default function App() {
   const approve = run(api.approve, 'Invoice approved & paid')
   const reject = run(api.reject, 'Invoice rejected')
 
+  // Flip risk scoring between the live LLM and the offline heuristic at runtime.
+  const toggleScoring = () => {
+    const next = health?.scoring_mode === 'llm' ? 'heuristic' : 'llm'
+    const msg = next === 'llm' ? 'Scoring: live LLM' : 'Scoring: offline heuristic'
+    run(api.setScoringMode, msg)(next)
+  }
+
   const queueCount = useMemo(
     () => invoices.filter((r) => r.status === 'needs_review').length,
     [invoices],
@@ -144,6 +156,18 @@ export default function App() {
         <span className="grow" />
         <input style={{ maxWidth: 200 }} placeholder="API key (if auth on)" value={key} onChange={onKey} />
         <button className="ghost" onClick={loadSamples}>Load samples</button>
+        <button
+          className="ghost"
+          onClick={toggleScoring}
+          disabled={!health?.llm_available}
+          title={
+            health?.llm_available
+              ? 'Toggle risk scoring between the live LLM and the offline heuristic'
+              : 'No LLM key configured (or disabled) — heuristic only'
+          }
+        >
+          {health?.scoring_mode === 'llm' ? '🤖 Scoring: LLM' : '🧮 Scoring: Heuristic'}
+        </button>
         <button className={live ? 'ghost' : ''} onClick={() => setLive((v) => !v)}
                 title={live ? `Auto-refreshing every ${POLL_MS / 1000}s — click to pause` : 'Paused — click to resume auto-refresh'}>
           {live ? '⏸ Live' : '▶ Paused'}
@@ -185,7 +209,7 @@ export default function App() {
           )}
           {route === 'ledger' && <LedgerView ledger={ledger} />}
           {route === 'governance' && <Governance policies={policies} health={health} />}
-          {route === 'audit' && <Audit audit={audit} />}
+          {route === 'audit' && <Audit audit={audit} onClear={run(api.clearAudit, 'Audit log cleared')} />}
 
           <div className="updated">
             {updatedAt

@@ -22,7 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .agents import IngestAgent
-from .config import settings
+from .config import get_runtime_disable_llm, set_runtime_disable_llm, settings
 from .db import Database, SqliteAuditLog, SqliteStore
 from .ledger import Ledger, Transaction
 from .models import ApprovalDecision, Invoice, InvoiceStatus, ProcessedInvoice
@@ -159,6 +159,13 @@ class InvoiceIn(BaseModel):
 def health() -> dict:
     """Liveness probe plus which scoring path is active."""
     live = settings.has_llm_credentials
+    # Whether an LLM *could* be used (key/proxy present and env kill-switch off),
+    # independent of the runtime toggle — so the dashboard can offer "switch to
+    # LLM" only when it would actually work.
+    llm_available = (
+        not settings.disable_llm
+        and bool(settings.llm_api_credential or settings.llm_api_base)
+    )
     return {
         "status": "ok",
         "scoring_mode": "llm" if live else "heuristic",
@@ -168,7 +175,35 @@ def health() -> dict:
         # without reading the server's environment.
         "provider": settings.llm_provider if live else None,
         "llm_disabled": settings.disable_llm,
+        "llm_available": llm_available,
+        # True when an operator has forced the heuristic path from the dashboard.
+        "force_heuristic": get_runtime_disable_llm(),
         "ledger_balance": _ledger.balance,
+    }
+
+
+class ScoringModeIn(BaseModel):
+    """Toggle risk scoring between the live LLM and the offline heuristic."""
+
+    mode: str  # "llm" (use the LLM if available) | "heuristic" (force offline)
+
+
+@app.post("/scoring-mode")
+def set_scoring_mode(payload: ScoringModeIn, _=Depends(require_role("admin"))) -> dict:
+    """Switch scoring mode at runtime — no restart, no env change.
+
+    "heuristic" forces the offline rule-based scorer; "llm" lifts the override so
+    the LLM is used when a provider key is configured. The env kill-switch
+    (CUSTODIAN_DISABLE_LLM) still wins if set.
+    """
+    mode = payload.mode.strip().lower()
+    if mode not in ("llm", "heuristic"):
+        raise HTTPException(status_code=422, detail="mode must be 'llm' or 'heuristic'.")
+    set_runtime_disable_llm(mode == "heuristic")
+    live = settings.has_llm_credentials
+    return {
+        "scoring_mode": "llm" if live else "heuristic",
+        "force_heuristic": get_runtime_disable_llm(),
     }
 
 
@@ -424,6 +459,20 @@ def audit(limit: int | None = None, _=Depends(require_role())) -> dict:
     if limit is not None and limit > 0:
         entries = entries[-limit:]
     return {"path": str(_audit_log.path), "total": total, "entries": entries}
+
+
+@app.delete("/audit")
+def clear_audit(_=Depends(require_role("admin"))) -> dict:
+    """Delete ALL audit-log events (admin only).
+
+    The audit trail is append-only by design; this is a deliberate operator
+    reset (e.g. clearing demo data), not part of normal decision flow. Processed
+    invoices and the ledger are left untouched — only the recorded history goes.
+    """
+    if _audit_log is None or not hasattr(_audit_log, "clear"):
+        raise HTTPException(status_code=404, detail="No clearable audit log configured.")
+    count = _audit_log.clear()
+    return {"deleted": count}
 
 
 @app.get("/")

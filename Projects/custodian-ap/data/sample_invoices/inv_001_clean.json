@@ -6,6 +6,6 @@
   "currency": "INR",
   "issue_date": "2026-08-10",
   "due_date": "2026-09-10",
-  "line_items": ["Printer paper (20 boxes)", "Ink cartridges (12)", "Stationery set"],
-  "memo": "Monthly office supply order, PO-5521."
+  "line_items": ["Printer paper (20 boxes)", "Ink cartridges (12)", "Stationery set — reorder: supplies@acme-office.com"],
+  "memo": "Monthly office supply order, PO-5521. Queries: ap@acme-office.com or +91 98765 43210."
 }

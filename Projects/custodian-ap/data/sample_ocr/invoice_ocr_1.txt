@@ -10,7 +10,7 @@ Due Date: 2026-09-12
 Line items:
 - Printer paper (20 boxes)
 - Ink cartridges (12)
-- Stationery set
+- Stationery set — reorder via ap@acme-office.com
 
 Total: ₹1,340.75
-Memo: Monthly office supply order, PO-5521.
+Memo: Monthly office supply order, PO-5521. Queries: ap@acme-office.com or +91 98765 43210.

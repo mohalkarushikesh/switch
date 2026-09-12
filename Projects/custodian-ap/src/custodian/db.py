@@ -154,6 +154,12 @@ class SqliteAuditLog:
             (processed.invoice.invoice_id, processed.status.value, processed.model_dump_json()),
         )
 
+    def clear(self) -> int:
+        """Delete every audit event. Returns how many were removed."""
+        count = len(self.db.query("SELECT 1 FROM audit_events"))
+        self.db.execute("DELETE FROM audit_events")
+        return count
+
     def read_all(self) -> list[dict]:
         rows = self.db.query("SELECT payload FROM audit_events ORDER BY id")
         return [json.loads(r["payload"]) for r in rows]

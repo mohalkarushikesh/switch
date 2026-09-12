@@ -4,21 +4,27 @@ import { useState } from 'react'
 // Fresh, unique id each time so repeated submits aren't blocked as duplicates.
 const genId = () => 'INV-' + Date.now().toString().slice(-6)
 
+// The default memo carries PII (email + phone) so a plain "Run through pipeline"
+// visibly exercises the Data-governance layer: it's redacted before scoring and
+// shows up as "redacted_pii" on the result.
 const BLANK = {
   vendor_name: 'New Vendor Co', vendor_account: 'NVC-CHK-100200',
   amount: 2500, issue_date: '2026-08-15', due_date: '2026-09-15',
-  line_items: 'Consulting, Support', memo: 'Q3 services',
+  line_items: 'Consulting, Support',
+  memo: 'Q3 services — contact ap@newvendor.com or +91 98765 43210',
 }
 
+// PII lives in the memo and a line item so the OCR path also demonstrates
+// redaction (the account number is a structural field and is left intact).
 const SAMPLE_OCR = `Invoice Number: OCR-500
 Vendor: Globex Corp
 Account: GLBX-CHK-4521
 Invoice Date: 2026-08-14
 Due Date: 2026-09-14
 - Cloud hosting (August)
-- Support retainer
+- Support retainer — contact ops@globex-corp.com
 Total: ₹4,200.00
-Memo: Monthly services`
+Memo: Monthly services. Billing queries: accounts@globex-corp.com or +91 98765 43210.`
 
 export default function SubmitPanel({ onSubmit, onOcr }) {
   const [tab, setTab] = useState('form')

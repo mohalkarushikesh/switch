@@ -11,15 +11,21 @@ This is **not a mocked demo**. It runs a full Docker stack and calls real LLM pr
 
 ## Table of Contents
 
-- [Overview](#overview)
-- [What You'll Build](#what-youll-build)
-- [Governance Layers](#governance-layers)
-- [System Architecture](#system-architecture)
-- [Technology Stack](#technology-stack)
-- [Prerequisites](#prerequisites)
-- [Getting Started](#getting-started)
-- [What You Will Learn](#what-you-will-learn)
-- [Project Structure](#project-structure)
+- [Custodian — Bank Accounts-Payable AI Agent System](#custodian--bank-accounts-payable-ai-agent-system)
+  - [Table of Contents](#table-of-contents)
+  - [Overview](#overview)
+  - [What You'll Build](#what-youll-build)
+  - [Governance Layers](#governance-layers)
+  - [System Architecture](#system-architecture)
+  - [Technology Stack](#technology-stack)
+  - [Prerequisites](#prerequisites)
+  - [What's Built Today](#whats-built-today)
+  - [Getting Started](#getting-started)
+    - [Choosing an LLM provider](#choosing-an-llm-provider)
+    - [API endpoints](#api-endpoints)
+  - [What You Will Learn](#what-you-will-learn)
+  - [Environment caveats](#environment-caveats)
+  - [Project Structure](#project-structure)
 
 ---
 
@@ -67,16 +73,16 @@ console UI and backed by supporting services (control plane, ledger, OCR/data se
 
 ```
                  ┌───────────────────────────────────────────────┐
-                 │                   Console UI                    │
+                 │                   Console UI                  │
                  └───────────────────────┬───────────────────────┘
                                          │
    ┌─────────── Governance Layers ───────┼──────────────────────────────┐
-   │  Identity · Data · Model · Policy · Agent Runtime · Operations      │
+   │  Identity · Data · Model · Policy · Agent Runtime · Operations     │
    └─────────────────────────────────────┼──────────────────────────────┘
                                          │
         ┌────────────────┬───────────────┼───────────────┬────────────────┐
-        │  Control Plane │     Ledger     │  OCR / Data    │  LLMs (LiteLLM)│
-        └────────────────┴────────────────────────────────┴────────────────┘
+        │  Control Plane │     Ledger    │  OCR / Data   │  LLMs (LiteLLM)│
+        └────────────────┴───────────────────────────────┴────────────────┘
 ```
 
 ## Technology Stack

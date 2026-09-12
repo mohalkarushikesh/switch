@@ -35,7 +35,7 @@ def _get_bool(name: str, default: bool) -> bool:
 # Model-name prefixes LiteLLM uses to pick a provider. A model with no
 # recognised prefix is an OpenAI model ("gpt-4o-mini"). Keep in sync with
 # Settings.llm_api_credential, which maps each of these to its key field.
-_PROVIDER_PREFIXES = frozenset({"openai", "groq", "huggingface", "anthropic"})
+_PROVIDER_PREFIXES = frozenset({"openai", "groq", "huggingface", "anthropic", "gemini"})
 
 
 @dataclass(frozen=True)
@@ -48,6 +48,7 @@ class Settings:
     llm_api_key: str | None    # proxy master key (when using llm_api_base)
     huggingface_api_key: str | None   # HF Inference / Inference-Providers token
     anthropic_api_key: str | None     # Anthropic API key (claude-* via LiteLLM)
+    gemini_api_key: str | None        # Google Gemini API key (gemini/* via LiteLLM)
     disable_llm: bool          # hard kill-switch: always use the heuristic scorer
 
     # Approval-routing thresholds
@@ -102,6 +103,7 @@ class Settings:
             "groq": self.groq_api_key,
             "huggingface": self.huggingface_api_key,
             "anthropic": self.anthropic_api_key,
+            "gemini": self.gemini_api_key,
         }.get(self.llm_provider)
 
     @property
@@ -111,8 +113,11 @@ class Settings:
         Matching the key to the model's provider (rather than accepting any key)
         keeps /health honest — an OpenAI key does not make a huggingface/* model
         reachable, and claiming "llm" there would mislead the dashboard.
+
+        The runtime override (toggled from the dashboard) and the env kill-switch
+        both force the heuristic path.
         """
-        if self.disable_llm:
+        if self.disable_llm or _runtime_disable_llm:
             return False
         return bool(self.llm_api_credential or self.llm_api_base)
 
@@ -130,6 +135,10 @@ def load_settings() -> Settings:
             os.getenv("HUGGINGFACE_API_KEY") or os.getenv("HF_TOKEN") or None
         ),
         anthropic_api_key=os.getenv("ANTHROPIC_API_KEY") or None,
+        # GOOGLE_API_KEY is LiteLLM's other accepted name for the Gemini key.
+        gemini_api_key=(
+            os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or None
+        ),
         disable_llm=_get_bool("CUSTODIAN_DISABLE_LLM", False),
         auto_pay_max_risk=_get_int("CUSTODIAN_AUTO_PAY_MAX_RISK", 30),
         auto_pay_max_amount=_get_int("CUSTODIAN_AUTO_PAY_MAX_AMOUNT", 5000),
@@ -151,6 +160,22 @@ def load_settings() -> Settings:
         mlflow_tracking_uri=os.getenv("CUSTODIAN_MLFLOW_URI") or None,
         mlflow_experiment=os.getenv("CUSTODIAN_MLFLOW_EXPERIMENT", "custodian-risk"),
     )
+
+
+# Runtime scoring-mode override, toggled at request time (e.g. from the
+# dashboard) without restarting. False = respect credentials/env; True = force
+# the heuristic scorer. The env kill-switch CUSTODIAN_DISABLE_LLM still wins.
+_runtime_disable_llm: bool = False
+
+
+def set_runtime_disable_llm(value: bool) -> None:
+    """Force (True) or lift (False) the heuristic-only scoring override."""
+    global _runtime_disable_llm
+    _runtime_disable_llm = bool(value)
+
+
+def get_runtime_disable_llm() -> bool:
+    return _runtime_disable_llm
 
 
 # Module-level singleton used throughout the app

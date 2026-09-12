@@ -4,75 +4,97 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Custodian — Accounts Payable</title>
+  <!-- Montserrat: the site typeface, matching the React app. From Google Fonts. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <style>
+    /* Styled after the U.S. Web Design System (USWDS): primary blue #005ea2,
+       ink #1b1b1b, cool grays, squared corners, Montserrat throughout. Light. */
     :root {
-      --bg: #0f172a; --panel: #1e293b; --panel2: #273449;
-      --text: #e2e8f0; --muted: #94a3b8; --border: #334155;
-      --blue: #2563eb; --green: #16a34a; --amber: #d97706; --red: #dc2626;
+      --bg: #f0f0f0; --panel: #ffffff; --panel2: #f5f6f7; --panel3: #dfe1e2;
+      --text: #1b1b1b; --muted: #565c65; --border: #dfe1e2;
+      --blue: #005ea2; --blue-dark: #1a4480; --green: #008817; --amber: #c05600; --red: #b50909;
+      --focus: #2491ff; --radius: 4px;
+      --font: "Montserrat", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     }
     * { box-sizing: border-box; }
     body {
-      margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-      background: var(--bg); color: var(--text); font-size: 14px;
+      margin: 0; font-family: var(--font); line-height: 1.5;
+      background: var(--bg); color: var(--text); font-size: 15px;
+      -webkit-font-smoothing: antialiased;
     }
+    .gov-banner { background: var(--panel3); color: var(--text); font-size: 12px; }
+    .gov-banner__inner { max-width: 1100px; margin: 0 auto; padding: 6px 24px; display: flex; align-items: center; gap: 8px; }
     header {
       padding: 18px 24px; border-bottom: 1px solid var(--border);
-      display: flex; align-items: center; gap: 24px; flex-wrap: wrap;
+      border-top: 4px solid var(--blue); background: var(--panel);
+      display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+      box-shadow: 0 1px 4px rgba(27,27,27,.08);
     }
-    header h1 { font-size: 18px; margin: 0; }
+    header h1 { font-size: 20px; font-weight: 700; margin: 0; }
     .pill {
       background: var(--panel2); padding: 4px 10px; border-radius: 999px;
-      color: var(--muted); font-size: 12px;
+      color: var(--muted); font-size: 12px; box-shadow: inset 0 0 0 1px var(--border);
     }
     .pill b { color: var(--text); }
     main { padding: 24px; max-width: 1100px; margin: 0 auto; }
-    .row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
     button {
-      background: var(--blue); color: white; border: none; padding: 8px 14px;
-      border-radius: 6px; cursor: pointer; font-size: 13px;
+      background: var(--blue); color: white; border: none; padding: 9px 16px;
+      border-radius: var(--radius); cursor: pointer; font-size: 14px;
+      font-family: inherit; font-weight: 600;
     }
-    button:hover { filter: brightness(1.1); }
-    button.ghost { background: var(--panel2); color: var(--text); }
+    button:hover { background: var(--blue-dark); }
+    button.ghost { background: var(--panel2); color: var(--text); box-shadow: inset 0 0 0 1px var(--border); }
+    button.ghost:hover { background: var(--panel3); }
     button.ok { background: var(--green); }
     button.bad { background: var(--red); }
     button:disabled { opacity: .5; cursor: not-allowed; }
+    button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 4px solid var(--focus); outline-offset: 0; }
     table { width: 100%; border-collapse: collapse; }
     th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
-    th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; }
+    th { color: var(--muted); font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
     tr.clickable { cursor: pointer; }
     tr.clickable:hover { background: var(--panel2); }
     .badge {
-      display: inline-block; padding: 3px 9px; border-radius: 999px;
-      font-size: 12px; font-weight: 600;
+      display: inline-block; padding: 3px 9px; border-radius: var(--radius);
+      font-size: 12px; font-weight: 700;
     }
-    .badge.paid { background: rgba(22,163,74,.18); color: #4ade80; }
-    .badge.needs_review { background: rgba(217,119,6,.18); color: #fbbf24; }
-    .badge.rejected { background: rgba(220,38,38,.18); color: #f87171; }
-    .badge.failed { background: rgba(220,38,38,.18); color: #f87171; }
+    .badge.paid { background: #ecf3ec; color: #216e1f; }
+    .badge.needs_review { background: #faf3d1; color: #8a6a00; }
+    .badge.rejected { background: #f4e3db; color: #b50909; }
+    .badge.failed { background: #f4e3db; color: #b50909; }
     .risk-bar {
       display: inline-block; width: 80px; height: 8px; border-radius: 4px;
-      background: var(--border); vertical-align: middle; overflow: hidden;
+      background: var(--panel3); vertical-align: middle; overflow: hidden;
     }
     .risk-fill { height: 100%; }
     .trail {
-      background: var(--panel); border-left: 3px solid var(--blue);
-      padding: 12px 16px; margin: 0; font-size: 13px; color: var(--muted);
+      background: var(--panel2); border-left: 4px solid var(--blue);
+      padding: 12px 16px; margin: 0; font-size: 13px; color: var(--muted); border-radius: var(--radius);
     }
     .trail li { margin: 4px 0; }
-    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
+    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; }
     .actions button { padding: 5px 10px; font-size: 12px; }
     .empty { color: var(--muted); padding: 24px; text-align: center; }
-    h2 { font-size: 15px; margin: 0 0 12px; }
+    h2 { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
     input, textarea {
-      background: var(--bg); border: 1px solid var(--border); color: var(--text);
-      border-radius: 6px; padding: 7px 9px; font-size: 13px; width: 100%;
+      background: var(--panel); border: 1px solid var(--muted); color: var(--text);
+      border-radius: var(--radius); padding: 9px 10px; font-size: 14px; width: 100%; font-family: inherit;
     }
     .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 3px; }
+    label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 3px; font-weight: 500; }
     .field { margin-bottom: 8px; }
   </style>
 </head>
 <body>
+  <section class="gov-banner" aria-label="Official website notice">
+    <div class="gov-banner__inner">
+      <span aria-hidden="true">🇺🇸</span>
+      <span>An official website of the U.S. government</span>
+    </div>
+  </section>
   <header>
     <h1>🛡️ Custodian</h1>
     <span class="pill">Scoring: <b id="mode">…</b></span>
@@ -100,7 +122,7 @@
         <div class="field"><label>Due date</label><input id="f-due" value="2026-09-15"></div>
       </div>
       <div class="field"><label>Line items (comma separated)</label><input id="f-items" value="Consulting, Support"></div>
-      <div class="field"><label>Memo</label><input id="f-memo" value="Q3 services"></div>
+      <div class="field"><label>Memo</label><input id="f-memo" value="Q3 services — contact ap@newvendor.com or +91 98765 43210"></div>
       <button id="submit-invoice">Run through pipeline</button>
     </div>
 
@@ -121,12 +143,14 @@
     const money = (n) => n.toLocaleString('en-IN', { style: 'currency', currency: 'INR' });
     let expanded = null; // invoice_id whose audit trail is open
 
-    // Sample invoices mirrored from data/sample_invoices for the "Load samples" button.
+    // Sample invoices mirrored from data/sample_invoices for the "Load samples"
+    // button. Memos embed PII (emails + phone numbers) so the Data-governance
+    // layer visibly redacts it — see "redacted_pii" on each processed invoice.
     const SAMPLES = [
-      { invoice_id:"INV-001", vendor_name:"Acme Office Supplies", vendor_account:"ACME-CHK-889201", amount:1240.50, issue_date:"2026-08-10", due_date:"2026-09-10", line_items:["Paper","Ink"], memo:"Monthly office supply order." },
-      { invoice_id:"INV-002", vendor_name:"Skyline Construction Co", vendor_account:"SKY-CHK-4410233", amount:48250.00, issue_date:"2026-08-01", due_date:"2026-08-31", line_items:["Phase 2 work"], memo:"Progress payment 2 of 4." },
-      { invoice_id:"INV-003", vendor_name:"QuickPay Global Ltd", vendor_account:"X12", amount:75000.00, issue_date:"2026-08-25", due_date:"2026-08-26", line_items:[], memo:"URGENT: wire now, changed bank details." },
-      { invoice_id:"INV-004", vendor_name:"Bright Cleaning Services", vendor_account:"BRIGHT-CHK-77120", amount:3000.00, issue_date:"2026-08-20", due_date:"2026-08-05", line_items:["Weekly cleaning"], memo:"Standard monthly cleaning." },
+      { invoice_id:"INV-001", vendor_name:"Acme Office Supplies", vendor_account:"ACME-CHK-889201", amount:1240.50, issue_date:"2026-08-10", due_date:"2026-09-10", line_items:["Paper","Ink — reorder: supplies@acme-office.com"], memo:"Monthly office supply order. Queries: ap@acme-office.com or +91 98765 43210." },
+      { invoice_id:"INV-002", vendor_name:"Skyline Construction Co", vendor_account:"SKY-CHK-4410233", amount:48250.00, issue_date:"2026-08-01", due_date:"2026-08-31", line_items:["Phase 2 work — foreman +91 90012 34567"], memo:"Progress payment 2 of 4. Site lead: rakesh@skyline-build.in, +91 90000 12345." },
+      { invoice_id:"INV-003", vendor_name:"QuickPay Global Ltd", vendor_account:"X12", amount:75000.00, issue_date:"2026-08-25", due_date:"2026-08-26", line_items:["Consulting — invoices to billing@quickpay-global.co"], memo:"URGENT: wire now, changed bank details. Confirm to finance@quickpay-global.co or +91 98111 22333." },
+      { invoice_id:"INV-004", vendor_name:"Bright Cleaning Services", vendor_account:"BRIGHT-CHK-77120", amount:3000.00, issue_date:"2026-08-20", due_date:"2026-08-05", line_items:["Weekly cleaning — supervisor priya@brightclean.in"], memo:"Standard monthly cleaning. Billing: billing@brightclean.in, 022-4455-6677." },
     ];
 
     const riskColor = (s) => s >= 75 ? 'var(--red)' : s >= 31 ? 'var(--amber)' : 'var(--green)';

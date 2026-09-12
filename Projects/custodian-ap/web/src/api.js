@@ -56,4 +56,6 @@ export const api = {
   reject: (id) => req('POST', `/invoices/${id}/reject`),
   remove: (id) => req('DELETE', `/invoices/${id}`),
   removeAll: () => req('DELETE', '/invoices'),
+  clearAudit: () => req('DELETE', '/audit'),
+  setScoringMode: (mode) => req('POST', '/scoring-mode', { mode }),
 }
