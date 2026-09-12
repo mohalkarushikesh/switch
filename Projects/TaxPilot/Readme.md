@@ -297,5 +297,17 @@ covers; `python scripts/smoke.py` with a key set closes the gap.
   false positives on years and counts); the LLM output-review layer backs it up.
 
 ## Execution 
-cd "C:/Users/2327238/Documents/dev/ai/Internal Switch/Projects/TaxPilot" && ANTHROPIC_API_KEY= .venv/Scripts/python.exe -m uvicorn taxpilot.api.main:app --host 127.0.0.1 --port 8000
+Without an API key (deterministic mode) — nothing to configure:
 
+```
+cd "C:/Users/2327238/Documents/dev/ai/Internal Switch/Projects/TaxPilot"
+.venv/Scripts/python.exe -m uvicorn taxpilot.api.main:app --host 127.0.0.1 --port 8000
+```
+
+With an API key (LLM mode):
+
+```
+cd "C:/Users/2327238/Documents/dev/ai/Internal Switch/Projects/TaxPilot"
+$env:ANTHROPIC_API_KEY = "sk-ant-..."
+.venv/Scripts/python.exe -m uvicorn taxpilot.api.main:app --host 127.0.0.1 --port 8000
+```

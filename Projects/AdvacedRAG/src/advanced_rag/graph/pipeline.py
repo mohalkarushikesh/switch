@@ -26,14 +26,27 @@ logger = logging.getLogger(__name__)
 RECURSION_LIMIT = 40
 
 
-def ask(question: str, *, thread_id: str | None = None, graph=None) -> AnswerResponse:
-    """Answer a question, pausing for approval if SQL needs to run."""
+def ask(
+    question: str,
+    *,
+    thread_id: str | None = None,
+    force_extractive: bool = False,
+    graph=None,
+) -> AnswerResponse:
+    """Answer a question, pausing for approval if SQL needs to run.
+
+    `force_extractive` selects the no-LLM path even when a model is configured:
+    the answer is quoted runbook passages rather than generated prose. It is
+    persisted in the run's state, so a resumed run keeps the mode it started in.
+    """
     graph = graph or get_graph()
     thread_id = thread_id or uuid.uuid4().hex
     config = _config(thread_id)
     started = time.perf_counter()
 
-    result = graph.invoke(initial_state(question), config=config)
+    result = graph.invoke(
+        initial_state(question, force_extractive=force_extractive), config=config
+    )
     return _to_response(question, result, thread_id, started)
 
 

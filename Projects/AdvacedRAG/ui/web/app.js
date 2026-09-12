@@ -380,6 +380,8 @@
     state.busy = busy;
     $("send").disabled = busy;
     $("question").disabled = busy;
+    // Clearing mid-flight would race the landing answer; grey it out to match.
+    $("clear-chat").disabled = busy;
   }
 
   function askError(message) {
@@ -393,6 +395,44 @@
     scroller.scrollTop = scroller.scrollHeight;
   }
 
+  /** True when the user has the "With LLM" mode selected. Defaults to true if
+   *  the control is missing so behaviour is unchanged from before the toggle. */
+  function useLlm() {
+    var extractive = $("mode-extractive");
+    return !(extractive && extractive.checked);
+  }
+
+  /** Refresh the answer-mode note under the toggle to describe what the current
+   *  selection does. Left alone when the LLM is offline, since that case owns
+   *  the note (see configureModeControls). */
+  function updateModeNote() {
+    var llmRadio = $("mode-llm");
+    if (!llmRadio || llmRadio.disabled) return;
+    $("mode-note").textContent = useLlm()
+      ? "Answers are generated from the retrieved sources."
+      : "No model is called — answers quote the matching runbook passages.";
+  }
+
+  /** Point the toggle at what the service can actually do. With no model
+   *  configured, generation is impossible, so lock the choice to "Without LLM"
+   *  and say why rather than letting a request fall back silently. */
+  function configureModeControls(liveLlm) {
+    var llmRadio = $("mode-llm");
+    var extractiveRadio = $("mode-extractive");
+    if (!llmRadio || !extractiveRadio) return;
+
+    if (liveLlm) {
+      llmRadio.disabled = false;
+      updateModeNote();
+      return;
+    }
+    llmRadio.disabled = true;
+    llmRadio.checked = false;
+    extractiveRadio.checked = true;
+    $("mode-note").textContent =
+      "No language model is configured, so only the without-LLM mode is available.";
+  }
+
   function ask(question) {
     if (!question || state.busy || state.awaiting) return;
     askError("");
@@ -403,7 +443,7 @@
     renderHistory();
     scrollDown();
 
-    apiPost("/ask", { question: question })
+    apiPost("/ask", { question: question, use_llm: useLlm() })
       .then(function (payload) {
         if (payload.awaiting_approval) {
           state.awaiting = {
@@ -425,6 +465,27 @@
         renderApproval();
         scrollDown();
       });
+  }
+
+  /** Drop everything on screen: the Ask conversation and the Retrieval lab's
+   *  results, so the button clears whichever tab the user is looking at.
+   *  Client-side only - the server keeps no session for us to reset, and any
+   *  parked approval thread is simply abandoned. Refuses while an ask is in
+   *  flight so a clear cannot race the answer that is about to land. */
+  function clearChat() {
+    if (state.busy) return;
+    // Ask panel.
+    state.history = [];
+    state.awaiting = null;
+    state.pending = null;
+    askError("");
+    renderHistory();
+    renderApproval();
+    // Retrieval lab panel.
+    setHtml($("lab-results"), "");
+    show($("lab-error"), false);
+    show($("lab-busy"), false);
+    $("question").focus();
   }
 
   function decide(approved) {
@@ -556,6 +617,7 @@
   function renderHealth() {
     apiGet("/health")
       .then(function (health) {
+        configureModeControls(health.llm_mode === "live");
         var tag = health.status === "ok" ? "usa-tag--success" : "usa-tag--warning";
         // Retrieval can be perfectly healthy with no model configured. Saying so
         // once, up front, is the difference between a working offline mode and a
@@ -642,6 +704,8 @@
         });
       });
 
+    $("clear-chat").addEventListener("click", clearChat);
+
     $("clear-cache").addEventListener("click", function () {
       var button = $("clear-cache");
       button.disabled = true;
@@ -662,6 +726,11 @@
         selectTab(tab.getAttribute("data-tab"));
       });
     });
+
+    document.querySelectorAll('input[name="answer-mode"]').forEach(function (radio) {
+      radio.addEventListener("change", updateModeNote);
+    });
+    updateModeNote();
 
     var question = $("question");
     question.addEventListener("input", function () {

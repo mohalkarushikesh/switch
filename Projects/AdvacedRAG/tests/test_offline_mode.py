@@ -167,6 +167,51 @@ def test_extractive_answer_survives_the_cache_round_trip(offline):
     assert patch["extractive"] is True
 
 
+# ------------------------------------------ force_extractive (Without LLM toggle)
+#
+# The UI's "Without LLM" mode sets force_extractive on a run even when a model is
+# configured. These pin that it takes the same deterministic path offline mode
+# does, rather than quietly generating.
+
+
+def test_force_extractive_generates_no_llm_answer_with_a_model_available(monkeypatch):
+    monkeypatch.setattr(nodes, "llm_available", lambda: True)
+    patch = nodes.generate_node(
+        {
+            "original_question": "why OOMKilled?",
+            "context": "ctx",
+            "chunks": [chunk()],
+            "force_extractive": True,
+        }
+    )
+    assert patch["extractive"] is True
+    # Same reasoning as offline: nothing failed, so the answer stays cacheable.
+    assert "generation_failed" not in patch
+    assert "OOMKilled containers" in patch["answer"]
+
+
+def test_force_extractive_forces_vector_route_with_a_model_available(monkeypatch):
+    monkeypatch.setattr(nodes, "llm_available", lambda: True)
+    patch = nodes.route_node({"question": "how many sev1 incidents?", "force_extractive": True})
+    assert patch["route"].value == "vector"
+    assert "no-LLM mode" in patch["trace"][0].detail
+
+
+def test_force_extractive_ignores_a_generated_cache_hit(monkeypatch):
+    # A cached *generated* answer must never be served to a Without-LLM request.
+    monkeypatch.setattr(nodes, "llm_available", lambda: True)
+    stored = {"answer": "generated prose", "route": "vector", "extractive": False, "citations": []}
+
+    class Hit:
+        def lookup(self, _question):
+            return stored, "exact"
+
+    monkeypatch.setattr(nodes, "get_cache", lambda: Hit())
+    patch = nodes.cache_lookup_node({"original_question": "q", "force_extractive": True})
+    assert patch["cached"] is False
+    assert patch["cache_kind"] == "none"
+
+
 # ------------------------------------------------------------------ guardrails
 
 

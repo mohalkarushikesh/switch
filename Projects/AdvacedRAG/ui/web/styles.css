@@ -6,8 +6,8 @@
  *
  * Tokens are copied by value rather than pulled from the USWDS package: this
  * app has no build step and npm is not reachable on the network it runs on.
- * Public Sans is named first and degrades to the platform UI font, since a
- * webfont request would fail here too.
+ * Montserrat is the site-wide typeface (loaded from Google Fonts in
+ * index.html) and degrades to the platform UI font if that request is blocked.
  */
 
 :root {
@@ -46,12 +46,18 @@
 
   --focus: #2491ff;
 
-  --sans: "Public Sans", "Public Sans Web", -apple-system, BlinkMacSystemFont,
-    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  /* USWDS pairs Merriweather (serif) for display type with the sans body. A
-     webfont request fails on this network, so this is a system-serif stack that
-     evokes the same federal-document register without a download. */
-  --serif: Merriweather, Georgia, Cambria, "Times New Roman", "Times", serif;
+  /* Montserrat is the site-wide typeface for this build (loaded in index.html).
+     The stacks below fall back to the platform sans face if the webfont is
+     blocked, so nothing depends on the download succeeding. --display is the
+     same family; USWDS would pair a serif here, but this build is single-family
+     by request, leaning on weight rather than a second face for hierarchy. */
+  --sans: "Montserrat", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --display: "Montserrat", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  /* Kept as an alias so the many `var(--serif)` display rules resolve to
+     Montserrat without a sweeping rename. */
+  --serif: var(--display);
   --mono: "Roboto Mono", "Roboto Mono Web", ui-monospace, "Cascadia Mono",
     Consolas, Menlo, monospace;
 }
@@ -65,9 +71,9 @@ body {
   flex-direction: column;
   background: var(--white);
   color: var(--ink);
-  /* Serif (Merriweather → Georgia) is the app-wide font by request; everything
-     inherits it except code/pre, which stay monospace. */
-  font-family: var(--serif);
+  /* Montserrat is the app-wide font by request; everything inherits it except
+     code/pre, which stay monospace. */
+  font-family: var(--sans);
   font-size: 17px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -162,6 +168,8 @@ body {
 
 .sidebar-block { padding: 24px 0 0; }
 .sidebar-foot { margin-top: auto; padding: 24px 0 0; }
+#clear-chat { margin-bottom: 10px; }
+.usa-button--block:disabled { opacity: 0.6; }
 
 .muted { color: var(--base-dark); }
 .note { font-size: 14px; margin: 10px 0 0; min-height: 18px; }
@@ -703,6 +711,53 @@ details.usa-accordion--error > .usa-accordion__button {
 .usa-checkbox input { width: 20px; height: 20px; accent-color: var(--primary); }
 
 input[type="range"] { accent-color: var(--primary); height: 24px; }
+
+/* ----------------------------------------------------- radio / answer mode */
+
+/* USWDS radio: a bordered card the whole label toggles, with a ring around the
+   selected option so the current answer mode is obvious at a glance. */
+.mode-fieldset {
+  border: none;
+  padding: 0;
+  margin: 0;
+  gap: 8px;
+}
+.usa-radio { position: relative; }
+.usa-radio__input {
+  position: absolute;
+  left: 14px;
+  top: 16px;
+  width: 20px;
+  height: 20px;
+  accent-color: var(--primary);
+  margin: 0;
+}
+.usa-radio__label {
+  display: block;
+  cursor: pointer;
+  padding: 12px 14px 12px 44px;
+  border: 1px solid var(--base-lighter);
+  border-radius: 4px;
+  background: var(--white);
+}
+.usa-radio__label:hover { background: var(--base-lightest); }
+.usa-radio__input:checked + .usa-radio__label {
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+  background: var(--primary-lighter);
+}
+.usa-radio__input:focus-visible + .usa-radio__label {
+  outline: 0.25rem solid var(--focus);
+  outline-offset: 0;
+}
+.usa-radio__input:disabled + .usa-radio__label {
+  cursor: not-allowed;
+  color: var(--base);
+  background: var(--base-lightest);
+}
+.mode-name { display: block; font-weight: 700; font-size: 15px; color: var(--ink); }
+.usa-radio__input:disabled + .usa-radio__label .mode-name { color: var(--base); }
+.mode-hint { display: block; font-size: 13.5px; color: var(--base-dark); margin-top: 2px; }
 
 .lab-summary { margin: 28px 0 14px; font-size: 17px; }
 .lab-hits { display: flex; flex-direction: column; gap: 4px; }

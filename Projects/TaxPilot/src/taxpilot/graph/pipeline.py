@@ -43,12 +43,14 @@ def prepare(
     documents_dir: str | Path | None = None,
     thread_id: str | None = None,
     regime: str | None = None,
+    use_llm: bool = True,
     graph=None,
 ) -> ReturnResponse:
     """Prepare a draft return, pausing for review if the gate trips.
 
     `regime` ("old"/"new"/"auto") forces the regime regardless of the documents -
-    used to recompute the same return under the other regime.
+    used to recompute the same return under the other regime. `use_llm=False` runs
+    the whole pipeline on its deterministic paths (no model call, no API key needed).
     """
     if documents is None:
         settings = get_settings()
@@ -59,7 +61,9 @@ def prepare(
     graph = graph or get_graph()
     thread_id = thread_id or uuid.uuid4().hex
     started = time.perf_counter()
-    result = graph.invoke(initial_state(documents, regime or ""), config=_config(thread_id))
+    result = graph.invoke(
+        initial_state(documents, regime or "", use_llm), config=_config(thread_id)
+    )
     return _to_response(result, thread_id, started)
 
 
@@ -140,6 +144,8 @@ def _to_response(result: dict[str, Any], thread_id: str, started: float) -> Retu
         tax_return=tax_return,
         audit=result.get("audit"),
         report=result.get("report", ""),
+        llm_summary=result.get("llm_summary", ""),
+        used_llm=bool(result.get("use_llm", True)),
         citations=_citations(result),
         awaiting_review=awaiting,
         review_items=review_items,

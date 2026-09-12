@@ -7,12 +7,12 @@ and resumes, control returns to the gate, which loops back through the engine on
 (so corrected inputs are recomputed and re-scored) and then continues to the
 report.
 
-    intake ─blocked─────────────────────────────────────────────┐
-       │                                                        │
-    extract → classify → research → calculate → audit → review_gate
-                                        ▲                    │  │
-                                        └──corrections───────┘  │ (approved / none)
-                                                                ▼
+    intake ─blocked──────────────────────────────────────────────────────┐
+       │                                                                  │
+    extract → classify → research → calculate → audit → summarize → review_gate
+                                        ▲                              │  │
+                                        └──corrections─────────────────┘  │ (approved / none)
+                                                                          ▼
                                         report → guardrail_output → finalize → END
 """
 
@@ -86,6 +86,7 @@ def build_graph(settings: Settings | None = None, *, checkpointer=None):
     graph.add_node("classify", nodes.classify_node)
     graph.add_node("research", nodes.research_node)
     graph.add_node("calculate", nodes.calculate_node)
+    graph.add_node("summarize", nodes.summarize_node)
     graph.add_node("report", nodes.report_node)
     graph.add_node("guardrail_output", nodes.guardrail_output_node)
     graph.add_node("finalize", nodes.finalize_node)
@@ -98,14 +99,17 @@ def build_graph(settings: Settings | None = None, *, checkpointer=None):
     graph.add_edge("classify", "research")
     graph.add_edge("research", "calculate")
 
-    # The tail after calculate depends on which of audit/review are enabled.
-    post_calc = "audit" if settings.enable_audit else ("review_gate" if settings.enable_review
-                                                        else "report")
+    # The summary is written before the review gate so it is visible both while a
+    # return awaits human review and after approval; the recompute loop passes
+    # back through it, so corrected figures get a fresh summary.
+    post_calc = "audit" if settings.enable_audit else "summarize"
     graph.add_edge("calculate", post_calc)
 
     if settings.enable_audit:
         graph.add_node("audit", nodes.audit_node)
-        graph.add_edge("audit", "review_gate" if settings.enable_review else "report")
+        graph.add_edge("audit", "summarize")
+
+    graph.add_edge("summarize", "review_gate" if settings.enable_review else "report")
 
     if settings.enable_review:
         graph.add_node("review_gate", nodes.review_gate_node)

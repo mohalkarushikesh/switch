@@ -9,23 +9,21 @@
   <script>
     (function () {
       try {
+        // Default to the light theme (USWDS light). Dark is opt-in only when the
+        // user has explicitly toggled it (persisted in localStorage).
         var t = localStorage.getItem("taxpilot-theme");
-        if (t !== "light" && t !== "dark") {
-          t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-        }
+        if (t !== "light" && t !== "dark") { t = "light"; }
         document.documentElement.setAttribute("data-theme", t);
       } catch (e) { document.documentElement.setAttribute("data-theme", "light"); }
     })();
   </script>
-  <!-- Web fonts available to try. To CHANGE THE FONT, edit --font in web/styles.css
-       (one line) to one of these names: "IBM Plex Sans" or "Archivo" (crisp,
-       non-rounded/squared grotesques) or "Public Sans" / "Libre Franklin".
-       Local fonts such as "Georgia" or "Segoe UI" need no link. To add a NEW
-       Google font, append its family below, then name it in --font. -->
+  <!-- Web font: Montserrat (used across the whole console). To CHANGE THE FONT,
+       edit --font in web/styles.css (one line). To add a NEW Google font, append
+       its family to the stylesheet URL below, then name it in --font. -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Serif:wght@400;500;600;700&display=swap" />
+      href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" />
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body>
@@ -104,6 +102,18 @@
 
         <button id="prepare" class="usa-button">Prepare return</button>
       </div>
+
+      <!-- Run with or without the LLM. Off = deterministic-only (no API key needed). -->
+      <div class="toolbar-options">
+        <label class="switch" for="use-llm">
+          <input type="checkbox" id="use-llm" checked
+                 aria-describedby="llm-hint" />
+          <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+          <span class="switch-text">Use AI (LLM) to enrich the draft</span>
+        </label>
+        <span id="llm-hint" class="llm-hint"></span>
+      </div>
+
       <p id="example-desc" class="toolbar-desc"></p>
       <p id="intake-error" class="error hidden"></p>
     </section>
@@ -188,6 +198,14 @@
         </nav>
 
         <div class="tabpanel" id="tab-summary" role="tabpanel" aria-labelledby="tab-summary-btn">
+          <section id="ai-summary" class="ai-summary hidden" aria-label="AI summary">
+            <div class="ai-summary-head">
+              <span class="ai-badge"><span class="ai-badge-dot" aria-hidden="true"></span>AI summary</span>
+              <span class="ai-summary-note">Written by the model · figures verified against the engine</span>
+            </div>
+            <p id="ai-summary-text"></p>
+          </section>
+          <p id="det-note" class="llm-hint hidden">Deterministic engine only — faster and fully reproducible.</p>
           <div id="metrics" class="metrics"></div>
           <section id="regime-compare" class="card regime-compare hidden">
             <h3 class="card-title">Regime comparison</h3>

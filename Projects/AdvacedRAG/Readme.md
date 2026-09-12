@@ -215,15 +215,15 @@ rag-ingest --recreate --seed-sql
 ## Pipeline
 
 ```
-guardrail_input ──blocked──────────────────────────────────────────┐
-       │                                                          │
-   cache_lookup ──hit───────────────────────────────────────────┐  │
-       │                                                        │  │
-     route ──reject───────────────────────────────────────────┐ │  │
-       ├── vector ──► retrieve ──► grade_context ─┬─correct──►│ │  │
-       │                 ▲                        │           │ │  │
-       │                 └──── rewrite_query ◄────┴─weak      │ │  │
-       │                                                      │ │  │
+guardrail_input ──blocked   ─────────────────────────────────────────┐
+       │                                                             │
+   cache_lookup ──hit  ───────────────────────────────────────────┐  │
+       │                                                          │  │
+     route ──reject───────────────────────────────────────────┐   │  │
+       ├── vector ──► retrieve ──► grade_context ─┬─correct──►│   │  │
+       │                 ▲                        │           │   │  │
+       │                 └──── rewrite_query ◄────┴─weak      │   │  │
+       │                                                      │   │  │
        └── sql/both ─► sql_generate ─► sql_approval ⏸ ─► sql_execute
                                                               │
                               generate ◄────────────────────────
@@ -518,3 +518,8 @@ $env:LLM_PROVIDER = "offline"; python -m advanced_rag.api.main
 Verified offline end to end: `/health` reports `llm_mode: offline` with 49
 indexed chunks, and `POST /ask` returns an `extractive: true` answer with 5
 citations.
+
+```
+cd "c:/Users/2327238/Documents/dev/ai/Internal Switch/Projects/AdvacedRAG" && ./.venv/Scripts/python.exe -c "from advanced_rag.config import get_settings as g; s=g(); print('host:',s.api_host,'port:',s.api_port)"
+
+```

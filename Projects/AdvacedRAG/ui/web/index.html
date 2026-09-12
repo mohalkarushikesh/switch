@@ -5,6 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kubernetes SRE Copilot</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23162e51'/%3E%3Ctext x='16' y='23' font-size='20' text-anchor='middle' fill='white' font-family='sans-serif'%3E%E2%8E%88%3C/text%3E%3C/svg%3E">
+<!-- Montserrat is the site-wide typeface, requested for this build. The request
+     may be blocked on locked-down networks; the CSS names a full sans fallback
+     stack so the layout is unaffected when the webfont does not load. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -39,11 +46,37 @@
     </div>
 
     <div class="sidebar-block">
+      <h2 id="mode-legend">Answer mode</h2>
+      <fieldset class="usa-fieldset mode-fieldset" aria-labelledby="mode-legend">
+        <div class="usa-radio">
+          <input class="usa-radio__input" id="mode-llm" type="radio"
+                 name="answer-mode" value="llm" checked>
+          <label class="usa-radio__label" for="mode-llm">
+            <span class="mode-name">With LLM</span>
+            <span class="mode-hint">Generated answer synthesised from the sources</span>
+          </label>
+        </div>
+        <div class="usa-radio">
+          <input class="usa-radio__input" id="mode-extractive" type="radio"
+                 name="answer-mode" value="extractive">
+          <label class="usa-radio__label" for="mode-extractive">
+            <span class="mode-name">Without LLM</span>
+            <span class="mode-hint">Quotes the matching runbook passages verbatim</span>
+          </label>
+        </div>
+      </fieldset>
+      <p id="mode-note" class="muted note" role="status"></p>
+    </div>
+
+    <div class="sidebar-block">
       <h2>Example questions</h2>
       <ul id="examples" class="usa-sidenav"></ul>
     </div>
 
     <div class="sidebar-foot">
+      <button id="clear-chat" class="usa-button usa-button--outline usa-button--block" type="button">
+        Clear conversation
+      </button>
       <button id="clear-cache" class="usa-button usa-button--outline usa-button--block" type="button">
         Clear answer cache
       </button>

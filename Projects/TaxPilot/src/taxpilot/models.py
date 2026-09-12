@@ -270,6 +270,12 @@ class ReturnResponse(BaseModel):
     tax_return: TaxReturn | None = None
     audit: AuditRisk | None = None
     report: str = ""
+    #: A short plain-language summary written by the LLM. Empty when the run was
+    #: deterministic (no model), which is how the UI shows the difference.
+    llm_summary: str = ""
+    #: Whether this run used the model at all. The UI shows the AI summary only when
+    #: True, and a "deterministic engine only" note otherwise.
+    used_llm: bool = True
     citations: list[Citation] = Field(default_factory=list)
 
     awaiting_review: bool = False

@@ -37,6 +37,9 @@ class TaxState(TypedDict, total=False):
     #: Force a regime ("old"/"new"/"auto") regardless of what the documents say -
     #: set by the caller to recompute the same return under the other regime.
     regime_override: str
+    #: When False, every LLM-backed node skips the model and takes its deterministic
+    #: path - the whole run is offline (no API key needed, faster, reproducible).
+    use_llm: bool
 
     # ---- research (RAG)
     deductions: list[DeductionCandidate]
@@ -65,6 +68,8 @@ class TaxState(TypedDict, total=False):
 
     # ---- report
     report: str
+    #: A short plain-language summary from the LLM; "" on a deterministic run.
+    llm_summary: str
 
     # ---- guardrails
     guardrails: Annotated[list[GuardrailOutcome], operator.add]
@@ -77,13 +82,18 @@ class TaxState(TypedDict, total=False):
     output_tokens: int
 
 
-def initial_state(documents: list[SourceDocument], regime_override: str = "") -> TaxState:
+def initial_state(
+    documents: list[SourceDocument],
+    regime_override: str = "",
+    use_llm: bool = True,
+) -> TaxState:
     return TaxState(
         documents=documents,
         extractions=[],
         profile=TaxpayerProfile(),
         income=[],
         regime_override=regime_override,
+        use_llm=use_llm,
         deductions=[],
         tax_return=None,
         audit=None,
@@ -94,6 +104,7 @@ def initial_state(documents: list[SourceDocument], regime_override: str = "") ->
         corrections=[],
         recompute=False,
         report="",
+        llm_summary="",
         guardrails=[],
         blocked=False,
         block_message="",

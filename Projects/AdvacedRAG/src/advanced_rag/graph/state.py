@@ -27,6 +27,11 @@ class RagState(TypedDict, total=False):
     #: The question as the user typed it, kept for citations and cache keys even
     #: after guardrail redaction or CRAG rewriting replaces `question`.
     original_question: str
+    #: Set by a caller who wants the deterministic extractive path even when an
+    #: LLM is configured - the UI's "Without LLM" mode. It makes every
+    #: LLM-backed node behave exactly as it does with no model available, so the
+    #: answer is quoted runbook passages rather than generated prose.
+    force_extractive: bool
 
     # ---- guardrails
     guardrails: Annotated[list[GuardrailOutcome], operator.add]
@@ -78,10 +83,11 @@ class RagState(TypedDict, total=False):
     output_tokens: int
 
 
-def initial_state(question: str) -> RagState:
+def initial_state(question: str, *, force_extractive: bool = False) -> RagState:
     return RagState(
         question=question,
         original_question=question,
+        force_extractive=force_extractive,
         guardrails=[],
         blocked=False,
         block_message="",

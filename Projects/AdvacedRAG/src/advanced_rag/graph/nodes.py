@@ -28,6 +28,20 @@ from advanced_rag.text2sql.generator import get_sql_generator
 logger = logging.getLogger(__name__)
 
 
+def _extractive_mode(state: RagState) -> bool:
+    """True when this run must answer by quoting passages, not generating prose.
+
+    That happens either because no LLM is configured at all, or because the
+    caller explicitly asked for the no-LLM path (`force_extractive`). Every
+    LLM-backed node consults this so the two look identical downstream.
+    """
+    return bool(state.get("force_extractive")) or not llm_available()
+
+
+def _use_llm(state: RagState) -> bool:
+    return not _extractive_mode(state)
+
+
 # --------------------------------------------------------------------- schemas
 
 
@@ -76,6 +90,12 @@ def cache_lookup_node(state: RagState) -> dict:
     trace: list = []
     with timed(trace, "cache_lookup") as step:
         payload, kind = get_cache().lookup(state["original_question"])
+        # The exact and semantic tiers key on the question alone, so a hit can be
+        # an answer produced in the other mode. Never serve it: a "Without LLM"
+        # request must not receive a cached generated answer, nor the reverse.
+        # The stored payload records which mode wrote it via `extractive`.
+        if payload is not None and bool(payload.get("extractive")) != _extractive_mode(state):
+            payload, kind = None, "none (other answer mode)"
         step.detail = kind
     if payload is None:
         return {"cached": False, "cache_kind": "none", "trace": trace}
@@ -101,10 +121,12 @@ def route_node(state: RagState) -> dict:
         if not settings.enable_text2sql:
             step.detail = "text2sql disabled - forcing vector"
             return {"route": Route.VECTOR, "trace": trace}
-        if not llm_available():
+        if not _use_llm(state):
             # Classifying a question needs a model. Vector retrieval is the safe
-            # default and, unlike SQL, needs no credentials to run.
-            step.detail = "offline mode - vector retrieval only"
+            # default and, unlike SQL, needs no credentials to run. This also
+            # covers the "Without LLM" mode, where SQL routing is unavailable.
+            reason = "offline mode" if not llm_available() else "no-LLM mode requested"
+            step.detail = f"{reason} - vector retrieval only"
             return {"route": Route.VECTOR, "trace": trace}
         try:
             decision = get_llm().complete_json(
@@ -190,10 +212,11 @@ def grade_node(state: RagState) -> dict:
                     "trace": trace,
                 }
 
-        if not llm_available():
+        if not _use_llm(state):
             # The cross-encoder floor above is the only grading available
-            # offline, and it has already had its say.
-            step.detail = "offline mode - context not graded"
+            # without a model, and it has already had its say. This also covers
+            # the "Without LLM" mode.
+            step.detail = "no LLM - context not graded"
             return {
                 "verdict": Verdict.CORRECT,
                 "verdict_reason": "no LLM configured; context accepted unjudged",
@@ -258,8 +281,9 @@ def generate_node(state: RagState) -> dict:
         "Question: " + state["original_question"] + "\n\nContext:\n" + context + instructions
     )
     with timed(trace, "generate") as step:
-        if not llm_available():
-            # Retrieval already did the useful half of the job. Quote it.
+        if not _use_llm(state):
+            # Retrieval already did the useful half of the job. Quote it. Reached
+            # with no model configured, or in the UI's "Without LLM" mode.
             answer = extractive_answer(
                 state.get("chunks") or [],
                 verdict=state.get("verdict"),
@@ -314,10 +338,11 @@ def critique_node(state: RagState) -> dict:
     """Self-RAG: grade the draft against its own context before returning it."""
     trace: list = []
     with timed(trace, "self_critique") as step:
-        if not llm_available():
+        if not _use_llm(state):
             # Nothing to critique: an extractive answer is quoted source text,
             # so there is no paraphrase that could have drifted from it.
-            step.detail = "offline mode - extractive answer, nothing to critique"
+            reason = "offline mode" if not llm_available() else "no-LLM mode"
+            step.detail = f"{reason} - extractive answer, nothing to critique"
             return {"critique": "", "trace": trace}
 
         prompt = (

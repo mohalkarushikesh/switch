@@ -12,12 +12,20 @@ from __future__ import annotations
 
 import copy
 import logging
+import time
 from typing import Any
 
 from taxpilot.config import Settings, get_settings
 from taxpilot.llm.client import LLMClient, LLMResult
 
 logger = logging.getLogger(__name__)
+
+#: Transient server-side statuses worth a short retry. 503 = high demand, 429 =
+#: rate/quota spike; both are often gone within a second or two. A quota that is
+#: genuinely exhausted keeps returning 429 and simply exhausts the retries, after
+#: which the caller falls back to its deterministic path as usual.
+_RETRY_STATUSES = (429, 503)
+_MAX_ATTEMPTS = 3
 
 #: Gemini finish reasons that mean the model declined. Mapped to the app's
 #: "refusal" stop_reason so complete_json raises LLMRefusedError like Claude does.
@@ -94,12 +102,27 @@ class GeminiClient(LLMClient):
             cfg["response_mime_type"] = "application/json"
             cfg["response_json_schema"] = _gemini_schema(output_schema)
 
-        response = self._client.models.generate_content(
+        response = self._generate(
             model=chosen_model,
             contents=self._contents(prompt, history),
             config=types.GenerateContentConfig(**cfg),
         )
         return self._to_result(response, chosen_model)
+
+    def _generate(self, **kwargs: Any) -> Any:
+        """generate_content with a short retry on transient 429/503 spikes."""
+        from google.genai import errors
+
+        for attempt in range(1, _MAX_ATTEMPTS + 1):
+            try:
+                return self._client.models.generate_content(**kwargs)
+            except errors.APIError as exc:
+                if getattr(exc, "code", None) not in _RETRY_STATUSES or attempt == _MAX_ATTEMPTS:
+                    raise
+                wait = 0.75 * attempt
+                logger.warning("Gemini %s on %s (attempt %d/%d); retrying in %.1fs",
+                               exc.code, kwargs.get("model"), attempt, _MAX_ATTEMPTS, wait)
+                time.sleep(wait)
 
     def count_tokens(self, prompt: str, *, system: str | None = None) -> int:
         contents = [system, prompt] if system else prompt

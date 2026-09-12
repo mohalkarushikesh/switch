@@ -42,6 +42,9 @@ class PrepareRequest(BaseModel):
     thread_id: str | None = None
     #: Force a regime, overriding the documents (for "recompute under other regime").
     regime: Literal["auto", "old", "new"] | None = None
+    #: Set False to run the pipeline entirely on its deterministic paths (no LLM,
+    #: no API key). Defaults to True (use the model where a stage benefits from it).
+    use_llm: bool = True
 
 
 class ResumeRequest(BaseModel):
@@ -90,12 +93,20 @@ def health() -> dict[str, Any]:
     except Exception as exc:
         logger.warning("Knowledge base unavailable: %s", exc)
         rules = -1
+    #: Whether an API key is configured for the active provider. The UI uses this
+    #: to default the "Use AI" switch and warn when a key is missing.
+    key = (
+        settings.google_api_key
+        if settings.llm_provider == "gemini"
+        else settings.anthropic_api_key
+    )
     return {
         "status": "ok" if rules > 0 else "degraded",
         "tax_year": settings.tax_year,
         "indexed_rule_passages": rules,
         "model": settings.llm_model,
         "provider": settings.llm_provider,
+        "llm_configured": bool(key),
         "features": {
             "rag": settings.enable_rag,
             "audit": settings.enable_audit,
@@ -114,6 +125,7 @@ def prepare(request: PrepareRequest) -> ReturnResponse:
             documents_dir=request.documents_dir,
             thread_id=request.thread_id,
             regime=request.regime,
+            use_llm=request.use_llm,
         )
     except Exception as exc:
         logger.exception("Prepare failed")

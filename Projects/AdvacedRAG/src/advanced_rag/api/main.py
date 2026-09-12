@@ -31,6 +31,9 @@ logger = logging.getLogger(__name__)
 class AskRequest(BaseModel):
     question: str = Field(min_length=1, max_length=4_000)
     thread_id: str | None = None
+    #: False selects the deterministic no-LLM path (quoted runbook passages)
+    #: even when a model is configured - the UI's "Without LLM" toggle.
+    use_llm: bool = True
 
 
 class ApproveRequest(BaseModel):
@@ -105,7 +108,11 @@ def health() -> dict[str, Any]:
 @app.post("/ask", response_model=AnswerResponse)
 def ask(request: AskRequest) -> AnswerResponse:
     try:
-        return pipeline.ask(request.question, thread_id=request.thread_id)
+        return pipeline.ask(
+            request.question,
+            thread_id=request.thread_id,
+            force_extractive=not request.use_llm,
+        )
     except Exception as exc:
         logger.exception("Request failed")
         raise HTTPException(status_code=500, detail=str(exc)) from exc

@@ -39,7 +39,15 @@ from taxpilot.observability import log_degraded, timed
 logger = logging.getLogger(__name__)
 
 
-def _maybe_llm():
+def _maybe_llm(state: TaxState | None = None):
+    """The shared client, or None to force the deterministic path.
+
+    Returns None when the caller turned the LLM off for this run (`use_llm=False`)
+    or when no client can be constructed (e.g. no API key). Either way every node
+    that calls this simply takes its deterministic branch.
+    """
+    if state is not None and not state.get("use_llm", True):
+        return None
     try:
         return get_llm()
     except Exception as exc:
@@ -77,7 +85,9 @@ class _Proposals(BaseModel):
 def guardrail_intake_node(state: TaxState) -> dict:
     trace: list = []
     with timed(trace, "guardrail_intake") as step:
-        result = get_guardrails().check_documents(state["documents"])
+        result = get_guardrails().check_documents(
+            state["documents"], use_llm=state.get("use_llm", True)
+        )
         step.detail = f"{len(result.outcomes)} layers, blocked={result.blocked}"
     patch: dict = {"guardrails": result.outcomes, "trace": trace}
     if result.blocked:
@@ -87,7 +97,7 @@ def guardrail_intake_node(state: TaxState) -> dict:
 
 def extract_node(state: TaxState) -> dict:
     trace: list = []
-    extractor = Extractor(llm=_maybe_llm())
+    extractor = Extractor(llm=_maybe_llm(state))
     with timed(trace, "extract") as step:
         extractions = [extractor.extract(doc) for doc in state["documents"]]
         n_fields = sum(len(e.fields) for e in extractions)
@@ -125,7 +135,7 @@ def research_node(state: TaxState) -> dict:
     candidates = to_deductions(state["extractions"])
     with timed(trace, "research") as step:
         if settings.enable_rag:
-            llm = _maybe_llm()
+            llm = _maybe_llm(state)
             if llm is not None:
                 candidates = _dedupe(candidates + _research_llm(llm, state, candidates))
         grounded = [c for c in candidates if c.grounded and is_known(c.citation.rule_id)]
@@ -196,6 +206,35 @@ def review_gate_node(state: TaxState) -> dict:
     }
 
 
+def summarize_node(state: TaxState) -> dict:
+    """Write the plain-language TL;DR before the review gate.
+
+    Runs ahead of `review_gate` (and again on the correction-recompute pass) so the
+    summary is committed to state and visible both while a return awaits human
+    review and after approval - not only once the final report is written.
+    """
+    trace: list = []
+    tax_return = state.get("tax_return")
+    deductions = state.get("deductions") or []
+    audit = state.get("audit")
+    with timed(trace, "summarize") as step:
+        llm = _maybe_llm(state)
+        if llm is None or tax_return is None:
+            step.detail = "no summary (deterministic run)"
+            return {"trace": trace}
+        summary = _llm_summary(llm, tax_return, deductions, audit)
+        if summary is None:
+            step.detail = "summary unavailable"
+            return {"trace": trace}
+        step.detail = f"LLM summary, {summary.output_tokens} output tokens"
+        return {
+            "llm_summary": summary.text,
+            "input_tokens": state.get("input_tokens", 0) + summary.input_tokens,
+            "output_tokens": state.get("output_tokens", 0) + summary.output_tokens,
+            "trace": trace,
+        }
+
+
 def report_node(state: TaxState) -> dict:
     trace: list = []
     tax_return = state.get("tax_return")
@@ -203,7 +242,7 @@ def report_node(state: TaxState) -> dict:
     audit = state.get("audit")
     with timed(trace, "report") as step:
         deterministic = _deterministic_report(tax_return, deductions, audit)
-        llm = _maybe_llm()
+        llm = _maybe_llm(state)
         if llm is None or tax_return is None:
             step.detail = "deterministic report"
             return {"report": deterministic, "trace": trace}
@@ -212,13 +251,11 @@ def report_node(state: TaxState) -> dict:
                                   system=prompts.REPORTER_SYSTEM)
             if result.refused or not result.text:
                 raise RuntimeError("empty or refused report")
-            step.detail = f"LLM report, {result.output_tokens} output tokens"
-            return {
-                "report": result.text,
-                "input_tokens": state.get("input_tokens", 0) + result.input_tokens,
-                "output_tokens": state.get("output_tokens", 0) + result.output_tokens,
-                "trace": trace,
-            }
+            in_tok = state.get("input_tokens", 0) + result.input_tokens
+            out_tok = state.get("output_tokens", 0) + result.output_tokens
+            step.detail = f"LLM report, {out_tok} output tokens"
+            return {"report": result.text, "input_tokens": in_tok,
+                    "output_tokens": out_tok, "trace": trace}
         except Exception as exc:
             log_degraded(logger, "report", "Report generation failed, using template", exc)
             step.detail = "deterministic report (LLM failed)"
@@ -229,7 +266,8 @@ def guardrail_output_node(state: TaxState) -> dict:
     trace: list = []
     with timed(trace, "guardrail_output") as step:
         result = get_guardrails().check_output(
-            state.get("report", ""), state.get("tax_return"), state.get("deductions")
+            state.get("report", ""), state.get("tax_return"), state.get("deductions"),
+            use_llm=state.get("use_llm", True),
         )
         step.detail = f"{len(result.outcomes)} layers, blocked={result.blocked}"
     patch: dict = {"guardrails": result.outcomes, "trace": trace}
@@ -273,7 +311,7 @@ def _to_regime_pref(text: str) -> str | None:
 
 
 def _classify_profile(state: TaxState) -> tuple[TaxpayerProfile, bool]:
-    llm = _maybe_llm()
+    llm = _maybe_llm(state)
     if llm is not None and get_settings().enable_rag:
         summary = "\n\n".join(f"[{d.doc_type.value}] {d.filename}\n{d.preview(500)}"
                               for d in state["documents"])
@@ -485,6 +523,48 @@ def _report_prompt(tax_return: TaxReturn, deductions, audit) -> str:
             f"Deductions applied:\n{ded}\n\n"
             f"Audit-risk flags (risk {audit.score if audit else 0}/100):\n{flags}\n\n"
             "Write the explanation now.")
+
+
+def _summary_prompt(tax_return: TaxReturn, deductions, audit) -> str:
+    verb = "refund" if tax_return.refund_or_due >= 0 else "balance payable"
+    ded = ", ".join(f"{c.name} ({rupees(c.amount)})" for c in deductions) or "none"
+    top_flag = audit.flags[0].detail if audit and audit.flags else "none"
+    return (f"Regime chosen: {tax_return.regime.value} (tax under the other regime: "
+            f"{rupees(tax_return.alternative_regime_tax)}).\n"
+            f"Gross total income {rupees(tax_return.gross_total_income)}, taxable income "
+            f"{rupees(tax_return.total_income)}, total tax {rupees(tax_return.total_tax)}.\n"
+            f"Bottom line: {verb} of {rupees(abs(tax_return.refund_or_due))}.\n"
+            f"Deductions applied: {ded}.\n"
+            f"Audit risk: {audit.score if audit else 0}/100; top flag: {top_flag}.\n\n"
+            "Write the 2-3 sentence summary now.")
+
+
+def _llm_summary(llm, tax_return: TaxReturn, deductions, audit):
+    """A short plain-language TL;DR, or None if the model declined, failed, or
+    stated a rupee figure the engine did not compute (the same no-invented-numbers
+    invariant the output guardrail enforces on the full report)."""
+    try:
+        result = llm.complete(
+            _summary_prompt(tax_return, deductions, audit),
+            system=prompts.SUMMARIZER_SYSTEM, max_tokens=400, thinking=False, effort="low",
+        )
+    except Exception as exc:
+        log_degraded(logger, "report", "LLM summary failed", exc)
+        return None
+    if result.refused or not result.text:
+        return None
+    if _invents_figure(result.text, tax_return, deductions):
+        logger.info("Dropping LLM summary: it stated a figure the engine did not compute")
+        return None
+    return result
+
+
+def _invents_figure(text: str, tax_return: TaxReturn, deductions) -> bool:
+    from taxpilot.guardrails import patterns
+    from taxpilot.guardrails.pipeline import FIGURE_MIN, _CONSTANTS
+
+    allowed = _CONSTANTS | tax_return.line_amounts() | {abs(c.amount) for c in (deductions or [])}
+    return any(a >= FIGURE_MIN and a not in allowed for a in patterns.rupee_amounts(text))
 
 
 def _deterministic_report(tax_return: TaxReturn | None, deductions, audit) -> str:

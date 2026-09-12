@@ -10,6 +10,7 @@ let lastResponse = null;
 let lastBody = null;          // the last /prepare body, for "recompute under other regime"
 let recomputeTarget = "old";  // the regime the recompute button will force
 let pendingTab = null;        // a tab to open on the next render (deep link)
+let llmConfigured = true;     // set from /health: is an API key configured?
 
 // The pipeline stages, in order, with a friendly label. renderSteps marks the
 // ones that appear in the run's trace as complete (a USWDS step indicator).
@@ -20,6 +21,7 @@ const STEPS = [
   ["research", "Research"],
   ["calculate", "Calculate"],
   ["audit", "Audit"],
+  ["summarize", "Summarize"],
   ["review_gate", "Review"],
   ["report", "Report"],
   ["guardrail_output", "Check"],
@@ -87,6 +89,8 @@ document.addEventListener("DOMContentLoaded", () => {
   $("btn-print").addEventListener("click", () => window.print());
   $("btn-recompute").addEventListener("click", recompute);
   $("theme-toggle").addEventListener("click", toggleTheme);
+  $("use-llm").addEventListener("change", updateLlmHint);
+  updateLlmHint();
   updateThemeIcon();
   wireAccordion("banner-toggle", "banner-content");
   wireTabs();
@@ -158,9 +162,30 @@ async function loadHealth() {
     const feats = Object.entries(h.features).filter(([, on]) => on).map(([k]) => k).join(", ");
     status.innerHTML = `<span class="dot"></span>tax year ${esc(h.tax_year)} · ${esc(h.model)} · ${esc(feats)}`;
     status.className = "status ok";
+    // When no API key is configured, default the run to deterministic-only so the
+    // user isn't surprised by silent fallbacks; they can still flip it back on.
+    llmConfigured = h.llm_configured !== false;
+    if (!llmConfigured) $("use-llm").checked = false;
+    updateLlmHint();
   } catch {
     status.innerHTML = `<span class="dot"></span>API unreachable`;
     status.className = "status bad";
+  }
+}
+
+function updateLlmHint() {
+  const on = $("use-llm").checked;
+  const hint = $("llm-hint");
+  if (!llmConfigured) {
+    hint.textContent = on
+      ? "No API key configured — AI stages will fall back to the deterministic engine."
+      : "Deterministic engine only — no API key needed.";
+    hint.className = on ? "llm-hint warn" : "llm-hint";
+  } else {
+    hint.textContent = on
+      ? "AI enriches classification, deduction research and the written report."
+      : "Deterministic engine only — faster and fully reproducible.";
+    hint.className = "llm-hint";
   }
 }
 
@@ -219,6 +244,7 @@ async function prepare() {
     body = example.server ? {} : { documents: example.documents };
   }
 
+  body.use_llm = $("use-llm").checked;   // run with the model, or deterministic-only
   lastBody = body;   // remembered so "recompute under other regime" can re-post it
   await run(() => postJson("/prepare", body));
 }
@@ -257,6 +283,7 @@ function render(resp, error) {
     $("blocked").textContent = "Request failed: " + (error?.message || "unknown error");
     show("blocked");
     hide("review"); hide("regime-badge"); hide("regime-compare"); hide("btn-recompute");
+    hide("ai-summary"); hide("det-note");
     ["steps", "metrics", "report", "citations", "audit-meter", "audit-flags",
      "guardrails", "trace"].forEach(clear);
     return;
@@ -278,6 +305,7 @@ function render(resp, error) {
   renderReview(resp);
   renderRegimeBadge(resp.tax_return);
   renderRecompute(resp);
+  renderAiSummary(resp);
   renderMetrics(resp.tax_return);
   renderRegimeCompare(resp.tax_return);
   $("report").innerHTML = resp.report ? mdToHtml(resp.report) : "<p>No report.</p>";
@@ -362,6 +390,26 @@ function renderReview(resp) {
   $("fix-regime").value = "";
   $("fix-drop").value = "";
   show("review");
+}
+
+function renderAiSummary(resp) {
+  // The AI summary is the visible difference between an LLM run and a deterministic
+  // one: show the model's text only when the LLM was used, and a plain note about
+  // the deterministic engine otherwise.
+  const usedLlm = resp.used_llm !== false;
+  const text = (resp.llm_summary || "").trim();
+  if (usedLlm && text) {
+    $("ai-summary-text").textContent = text;
+    show("ai-summary");
+    hide("det-note");
+  } else if (usedLlm) {
+    // LLM run, but no summary came back (declined or dropped) — show nothing.
+    hide("ai-summary");
+    hide("det-note");
+  } else {
+    hide("ai-summary");
+    show("det-note");
+  }
 }
 
 function renderMetrics(ret) {
