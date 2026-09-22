@@ -180,11 +180,46 @@ def build_graph(settings: Settings | None = None, *, checkpointer=None):
     return graph.compile(checkpointer=checkpointer or MemorySaver())
 
 
+def _make_checkpointer(settings: Settings):
+    """The checkpointer for SQL-approval run state.
+
+    MemorySaver is process-local, so /approve must hit the same replica that
+    served /ask. Set CHECKPOINT_BACKEND=postgres (with POSTGRES_DSN and the
+    [postgres-checkpoint] extra) to persist it and scale out. Any problem -
+    missing package, unreachable DB - falls back to memory rather than failing
+    startup, so a misconfiguration degrades to single-replica instead of down.
+    """
+    if settings.checkpoint_backend != "postgres":
+        return MemorySaver()
+    if not settings.postgres_dsn:
+        logger.warning("CHECKPOINT_BACKEND=postgres but POSTGRES_DSN is empty - using MemorySaver")
+        return MemorySaver()
+    try:
+        from langgraph.checkpoint.postgres import PostgresSaver
+    except ImportError:
+        logger.warning(
+            'langgraph-checkpoint-postgres not installed '
+            '(pip install -e ".[postgres-checkpoint]") - using MemorySaver'
+        )
+        return MemorySaver()
+    # PostgresSaver wants a plain psycopg DSN, not the SQLAlchemy +psycopg form.
+    conn = settings.postgres_dsn.replace("+psycopg2", "").replace("+psycopg", "")
+    try:
+        # from_conn_string is a context manager; enter it for the process lifetime
+        # (this is a long-lived singleton) so the connection stays open.
+        saver = PostgresSaver.from_conn_string(conn).__enter__()
+        saver.setup()  # idempotent: creates the checkpoint tables if absent
+        logger.info("Graph checkpointer: Postgres (persistent approval state)")
+        return saver
+    except Exception as exc:
+        logger.warning("Postgres checkpointer unavailable (%s) - using MemorySaver", exc)
+        return MemorySaver()
+
+
 @lru_cache
 def get_graph():
-    """Process-wide compiled graph with an in-memory checkpointer.
+    """Process-wide compiled graph.
 
-    In-memory means approval state is lost on restart; point this at
-    langgraph-checkpoint-postgres for a deployment with more than one worker.
+    Checkpointer is chosen by CHECKPOINT_BACKEND; see `_make_checkpointer`.
     """
-    return build_graph()
+    return build_graph(checkpointer=_make_checkpointer(get_settings()))

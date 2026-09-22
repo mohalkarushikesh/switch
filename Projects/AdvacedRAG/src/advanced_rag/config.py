@@ -11,7 +11,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -33,13 +33,26 @@ class Settings(BaseSettings):
     llm_provider: Literal["anthropic", "gemini", "offline"] = "anthropic"
     anthropic_api_key: str | None = None
     #: Gemini API key (Google AI Studio). Only used when llm_provider == "gemini".
-    google_api_key: str | None = None
+    #: Accepts either GEMINI_API_KEY (the name Google AI Studio hands out) or
+    #: GOOGLE_API_KEY; the google-genai SDK itself only reads them from the OS
+    #: environment, so loading it here from .env is what actually wires it up.
+    google_api_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("GEMINI_API_KEY", "GOOGLE_API_KEY", "google_api_key"),
+    )
     llm_model: str = "claude-opus-5"
     #: Cheaper model for the many small classification/grading calls in the graph.
     llm_fast_model: str = "claude-haiku-4-5"
     llm_effort: str = "high"
     llm_max_tokens: int = 16_000
     llm_refusal_fallbacks: bool = True
+    #: Bounded retry for transient Gemini 429/5xx (flash "high demand" 503s).
+    #: 1 disables retrying. Applies to the gemini backend's chat path.
+    llm_max_retries: int = 4
+    #: If the primary model still fails with a transient error after retries, try
+    #: once on this model. Empty disables it. Point it at the fast model to keep
+    #: interactive latency bounded when the main model is being load-shed.
+    llm_retry_fallback_model: str | None = None
 
     # ---------- Vector store ----------
     qdrant_url: str | None = None
@@ -50,11 +63,21 @@ class Settings(BaseSettings):
     # ---------- Embeddings / reranking ----------
     #: "fastembed" = dense + sparse + cross-encoder (downloads ONNX models).
     #: "keyword"   = pure-Python BM25 only; no download, no dense arm, no reranker.
+    #: "gemini"    = dense via the Gemini embeddings API + sparse via local BM25.
+    #:              The on-network path to a real dense arm where huggingface.co
+    #:              is blocked but the Gemini API is reachable. No cross-encoder
+    #:              (that stays the lexical stand-in), no ONNX download.
     #: "auto"      = try fastembed, fall back to keyword if the models cannot be got.
-    retrieval_backend: Literal["auto", "fastembed", "keyword"] = "auto"
+    retrieval_backend: Literal["auto", "fastembed", "keyword", "gemini"] = "auto"
     dense_model: str = "BAAI/bge-small-en-v1.5"
     sparse_model: str = "Qdrant/bm25"
     rerank_model: str = "Xenova/ms-marco-MiniLM-L-6-v2"
+    #: Gemini embedding model + output width, used only when retrieval_backend ==
+    #: "gemini". gemini-embedding-001 emits 3072 dims by default but supports
+    #: Matryoshka truncation; 768 keeps the Qdrant collection lean at negligible
+    #: quality cost. Reuses google_api_key (GEMINI_API_KEY).
+    embed_model: str = "gemini-embedding-001"
+    embed_dim: int = 768
     #: Where fastembed keeps downloaded ONNX models. Point this at a pre-populated
     #: directory on a network that blocks huggingface.co.
     model_cache_dir: Path | None = None
@@ -67,6 +90,13 @@ class Settings(BaseSettings):
     sqlite_path: Path = Path("data/ops.db")
     sql_row_limit: int = 200
     sql_timeout_seconds: int = 15
+
+    # ---------- Graph state ----------
+    #: "memory" keeps SQL-approval run state in-process (single replica / sticky).
+    #: "postgres" persists it via langgraph-checkpoint-postgres so /approve can
+    #: land on any replica - requires POSTGRES_DSN and the [postgres-checkpoint]
+    #: extra; falls back to memory with a warning if either is missing.
+    checkpoint_backend: Literal["memory", "postgres"] = "memory"
 
     # ---------- Cache ----------
     redis_url: str | None = None

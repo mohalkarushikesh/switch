@@ -44,23 +44,36 @@ def evaluate_retrieval(top_n: int = 5) -> list[dict]:
     from advanced_rag.retrieval import get_retriever
 
     retriever = get_retriever()
-    cases = [c for c in dataset.RETRIEVAL_AND_ANSWER if c.expected_sources]
+    base = [c for c in dataset.RETRIEVAL_AND_ANSWER if c.expected_sources]
+    hard = [c for c in dataset.HARD_RETRIEVAL if c.expected_sources]
+    cases = base + hard
+    hard_start = len(base)  # everything at this index or beyond is a hard case
     rows: list[dict] = []
 
     for label, kwargs in STRATEGIES:
         started = time.perf_counter()
         pairs = []
+        hard_pairs = []
         hyde_produced = 0
         cross_encoded = 0
-        for case in cases:
+        for index, case in enumerate(cases):
             result = retriever.retrieve(case.question, top_n=top_n, **kwargs)
-            pairs.append((result.chunks, case.expected_sources))
+            pair = (result.chunks, case.expected_sources)
+            pairs.append(pair)
+            if index >= hard_start:
+                # The paraphrase-only cases: this is where BM25 and dense diverge.
+                hard_pairs.append(pair)
             if result.hyde_document:
                 hyde_produced += 1
             if result.cross_encoder:
                 cross_encoded += 1
 
         row = score_all(pairs, k=top_n).as_row(label)
+        hard_scores = score_all(hard_pairs, k=top_n)
+        row["hard_hit@k"] = round(hard_scores.hit_rate, 3)
+        row["hard_recall"] = round(hard_scores.recall, 3)
+        row["hard_mrr"] = round(hard_scores.mrr, 3)
+        row["hard_cases"] = hard_scores.cases
         row["seconds"] = round(time.perf_counter() - started, 1)
 
         # Record what actually ran. A strategy whose distinguishing feature was
@@ -77,6 +90,54 @@ def evaluate_retrieval(top_n: int = 5) -> list[dict]:
         if row["notes"]:
             print(f"      ^ {row['notes']}")
     return rows
+
+
+def evaluate_negatives(top_n: int = 5) -> dict:
+    """Out-of-corpus questions: a good retriever should signal 'nothing relevant'.
+
+    Measured as the top *authoritative* rerank score falling below the CRAG floor
+    - i.e. the pipeline would decline rather than answer from an unrelated runbook.
+    Only meaningful with an authoritative reranker (the gemini backend); with the
+    lexical stand-in it is reported as not meaningful.
+    """
+    from advanced_rag.retrieval import get_retriever
+
+    settings = get_settings()
+    retriever = get_retriever()
+    floor = settings.crag_relevance_floor
+    cases = dataset.NEGATIVE_RETRIEVAL
+    rows: list[dict] = []
+    abstained = 0
+    authoritative = True
+
+    for case in cases:
+        result = retriever.retrieve(case.question, use_hyde=False)
+        authoritative = result.cross_encoder
+        top = max((c.rerank_score or 0.0 for c in result.chunks), default=0.0)
+        below = top < floor
+        abstained += 1 if below else 0
+        rows.append(
+            {"question": case.question, "top_rerank_score": round(top, 3), "below_floor": below}
+        )
+        print(
+            f"  {'ABSTAIN ' if below else 'RETRIEVE'} top={top:.3f} (floor {floor}) "
+            f"{case.question[:55]}"
+        )
+
+    total = len(cases)
+    rate = round(abstained / total, 3) if total else 0.0
+    if not authoritative:
+        print("  NOTE: reranker is not authoritative here - abstention is not meaningful")
+    else:
+        print(f"\n  abstained on {abstained}/{total} ({rate:.0%}) out-of-corpus questions")
+    return {
+        "floor": floor,
+        "authoritative_reranker": authoritative,
+        "abstention_rate": rate,
+        "abstained": abstained,
+        "total": total,
+        "cases": rows,
+    }
 
 
 def evaluate_guardrails() -> dict:
@@ -181,10 +242,18 @@ def evaluate_ragas(records: list[dict]) -> dict | None:
 
 
 def _format_row(row: dict) -> str:
+    hard = ""
+    if row.get("hard_cases"):
+        # The headline metrics stay near 1.00 (the easy set saturates them); the
+        # hard-subset columns are the ones that separate the strategies.
+        hard = (
+            f"  | hard(n={row['hard_cases']}): hit@k={row['hard_hit@k']:.2f} "
+            f"recall={row['hard_recall']:.2f} mrr={row['hard_mrr']:.2f}"
+        )
     return (
         f"  {row['strategy']:<26} hit@k={row['hit@k']:.2f} recall={row['recall']:.2f} "
         f"mrr={row['mrr']:.2f} ndcg={row['ndcg']:.2f} p@k={row['p@k']:.2f} "
-        f"({row['seconds']}s)"
+        f"({row['seconds']}s){hard}"
     )
 
 
@@ -225,12 +294,20 @@ def main(argv: list[str] | None = None) -> int:
         args.retrieval = True  # cheapest useful default
 
     setup_logging(get_settings().log_level)
+    # This runner is an entry point that makes HTTPS calls (Gemini) and may
+    # download models (fastembed), so route TLS through the OS trust store like
+    # the API and ingest CLI do - otherwise a corporate CA fails verification.
+    from advanced_rag.certs import enable_system_trust_store
+
+    enable_system_trust_store()
     report: dict = {"generated_at": datetime.now(UTC).isoformat()}
 
     if args.retrieval:
         print("\n== retrieval strategies ==")
         report["retrieval"] = evaluate_retrieval(top_n=args.top_n)
         warn_if_saturated(report["retrieval"])
+        print("\n== out-of-corpus negatives (abstention) ==")
+        report["negatives"] = evaluate_negatives(top_n=args.top_n)
     if args.guardrails:
         print("\n== guardrails ==")
         report["guardrails"] = evaluate_guardrails()

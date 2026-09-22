@@ -5,14 +5,15 @@ by reading the corpus beat a thousand generated ones you cannot, and the
 retrieval cases name the document that *must* appear so retrieval can be scored
 without an LLM judge at all.
 
-**Known limitation:** on a corpus of 8 documents with lexically distinctive
-vocabulary, plain BM25 already scores hit@5 = recall = MRR = NDCG = 1.00. The set
-is therefore saturated and cannot discriminate between retrieval strategies -
-dense, hybrid and reranked all look identical on it. Only precision@k still
-moves. To make this set useful for comparing strategies it needs either a larger
-corpus or harder cases: questions phrased with none of the document's vocabulary,
-near-duplicate documents that only semantics can separate, and negatives that
-should retrieve nothing.
+**Saturation and the fix:** on a corpus of 8 documents with lexically
+distinctive vocabulary, plain BM25 already scores hit@5 = recall = MRR = NDCG =
+1.00 on RETRIEVAL_AND_ANSWER below, so that set cannot tell retrieval strategies
+apart - only precision@k moves. `HARD_RETRIEVAL` addresses exactly that: each
+question is deliberately paraphrased with *none* of the target document's
+distinctive vocabulary, so lexical BM25 misses and only semantic (dense) search
+can find the source. The runner scores both sets together, which is what lets a
+dense/hybrid strategy separate from BM25 in the table. A larger corpus and
+retrieve-nothing negatives are still worthwhile follow-ups.
 """
 
 from __future__ import annotations
@@ -191,6 +192,90 @@ RETRIEVAL_AND_ANSWER: list[EvalCase] = [
         ),
         tags=["policy"],
     ),
+]
+
+#: Paraphrase-only cases: each is worded with none of the target document's
+#: distinctive vocabulary, so BM25 has almost nothing to match on and only dense
+#: retrieval reliably finds the source. These are what de-saturate the metrics
+#: and make the keyword->hybrid gain visible. Retrieval-only (no expected_facts):
+#: they exist to score which arm *finds* the document, not what the answer says.
+HARD_RETRIEVAL: list[EvalCase] = [
+    EvalCase(
+        question=(
+            "Why does the machine suddenly force-quit my program the moment it grows "
+            "too large in RAM?"
+        ),
+        expected_sources=["oomkilled.md"],
+        tags=["hard", "semantic"],
+    ),
+    EvalCase(
+        question=(
+            "My service boots, dies a few seconds later, waits, then boots again in an "
+            "endless cycle. Where should I look?"
+        ),
+        expected_sources=["crashloopbackoff.md"],
+        tags=["hard", "semantic"],
+    ),
+    EvalCase(
+        question=(
+            "My workloads sit unplaced for ages even though the servers look mostly idle."
+        ),
+        expected_sources=["pending-pods.md"],
+        tags=["hard", "semantic"],
+    ),
+    EvalCase(
+        question=(
+            "The server can't download my program's package from the registry and says "
+            "it isn't allowed to."
+        ),
+        expected_sources=["image-pull-failures.md"],
+        tags=["hard", "semantic"],
+    ),
+    EvalCase(
+        question=(
+            "A whole group of servers dropped off the network at the same instant - "
+            "should I move their work elsewhere?"
+        ),
+        expected_sources=["node-notready.md"],
+        tags=["hard", "semantic"],
+    ),
+    EvalCase(
+        question=(
+            "Right after each release the gateway briefly tells visitors the site is "
+            "down, then it settles on its own."
+        ),
+        expected_sources=["ingress-5xx.md"],
+        tags=["hard", "semantic"],
+    ),
+    EvalCase(
+        question=(
+            "How long do we keep the tamper-proof record of who changed what on the "
+            "platform?"
+        ),
+        expected_sources=["cluster-policy.md"],
+        tags=["hard", "semantic"],
+    ),
+    EvalCase(
+        question=(
+            "What actually went wrong during the shopping-cart failure we had earlier "
+            "this year?"
+        ),
+        expected_sources=["postmortem-2026-03-checkout-outage.md"],
+        tags=["hard", "semantic"],
+    ),
+]
+
+#: Negatives: questions whose answer is NOT in the 8-doc corpus. A good retriever
+#: should signal "nothing relevant" rather than confidently surfacing an unrelated
+#: runbook - measured as the top authoritative rerank score falling below the CRAG
+#: floor (see evaluation.runner.evaluate_negatives). Only meaningful with an
+#: authoritative reranker (the gemini backend); the lexical stand-in can't judge it.
+NEGATIVE_RETRIEVAL: list[EvalCase] = [
+    EvalCase(question="What is the maximum number of pods per node on our clusters?"),
+    EvalCase(question="How do I rotate the etcd data-encryption keys?"),
+    EvalCase(question="What is our disaster-recovery procedure for a full etcd restore?"),
+    EvalCase(question="Which CNI plugin do our clusters use and how is it configured?"),
+    EvalCase(question="What's a good recipe for sourdough bread?"),
 ]
 
 SQL_CASES: list[EvalCase] = [

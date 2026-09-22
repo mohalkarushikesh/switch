@@ -128,10 +128,26 @@ class Guardrails:
         if not use_llm:
             return result
 
+        # Layers 5 and 6 are the only two independent model calls in a request -
+        # intent and scope both judge the same redacted question and neither reads
+        # the other's verdict. Run them concurrently so the request waits one
+        # round trip instead of two; the outcomes are still recorded in layer
+        # order below, and an intent block still suppresses the scope outcome
+        # exactly as the sequential version did (the extra scope call it wastes on
+        # a block is cheap and rare).
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            intent_future = pool.submit(
+                self._classify, IntentVerdict, prompts.GUARDRAIL_INTENT_SYSTEM, redacted, "intent"
+            )
+            scope_future = pool.submit(
+                self._classify, ScopeVerdict, _SCOPE_SYSTEM, redacted, "scope"
+            )
+            verdict = intent_future.result()
+            scope = scope_future.result()
+
         # Layer 5 - intent classification.
-        verdict = self._classify(
-            IntentVerdict, prompts.GUARDRAIL_INTENT_SYSTEM, redacted, "intent"
-        )
         if verdict is None:
             result.record(_skipped("intent", _skip_reason()))
         elif verdict.violates_policy:
@@ -141,7 +157,6 @@ class Guardrails:
             result.record(GuardrailOutcome(layer="intent", passed=True, detail="allowed"))
 
         # Layer 6 - topical scope.
-        scope = self._classify(ScopeVerdict, _SCOPE_SYSTEM, redacted, "scope")
         if scope is None:
             result.record(_skipped("scope", _skip_reason()))
         elif not scope.in_scope:

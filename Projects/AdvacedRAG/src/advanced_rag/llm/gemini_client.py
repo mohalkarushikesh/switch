@@ -35,6 +35,17 @@ _REFUSAL_FINISHES = frozenset(
 #: json_schema_for() adds keys Gemini's structured-output validator rejects.
 _STRIP_SCHEMA_KEYS = ("additionalProperties", "title", "$schema")
 
+#: HTTP statuses worth retrying: rate limiting and transient server faults.
+#: Gemini load-sheds generation with 503 "high demand" under load; the Anthropic
+#: SDK retries these itself, so the graph never used to see them.
+_RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
+
+
+def _is_retryable(exc: Exception) -> bool:
+    """True for transient Gemini errors (rate limit / 5xx) worth another attempt."""
+    code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+    return code in _RETRYABLE_STATUS
+
 
 def _gemini_schema(schema: dict[str, Any]) -> dict[str, Any]:
     """Strip keys Gemini rejects from a JSON schema.
@@ -66,6 +77,13 @@ class GeminiClient(LLMClient):
         # client and would fail without an Anthropic credential.
         from google import genai
 
+        from advanced_rag.certs import enable_system_trust_store
+
+        # Inject the OS trust store BEFORE constructing the client: httpx builds
+        # its SSL context at construction time, so a client built first (e.g. a
+        # guardrail call before any embedding) would bake in the certifi bundle
+        # and never verify a corporate CA. Idempotent; safe to call every time.
+        enable_system_trust_store()
         self.settings = settings or get_settings()
         # api_key=None lets the SDK fall back to GOOGLE_API_KEY / GEMINI_API_KEY.
         self._client = genai.Client(api_key=self.settings.google_api_key or None)
@@ -93,12 +111,54 @@ class GeminiClient(LLMClient):
             cfg["response_mime_type"] = "application/json"
             cfg["response_json_schema"] = _gemini_schema(output_schema)
 
-        response = self._client.models.generate_content(
-            model=chosen_model,
-            contents=self._contents(prompt, history),
-            config=types.GenerateContentConfig(**cfg),
-        )
+        contents = self._contents(prompt, history)
+        config = types.GenerateContentConfig(**cfg)
+        from google.genai import errors
+
+        try:
+            response = self._generate(model=chosen_model, contents=contents, config=config)
+        except errors.APIError as exc:
+            # Last resort when the primary model is being load-shed: one shot on a
+            # configured fallback (typically the fast model) before giving up.
+            fallback = self.settings.llm_retry_fallback_model
+            if fallback and fallback != chosen_model and _is_retryable(exc):
+                logger.warning(
+                    "Primary model %s still failing (%s); one attempt on fallback %s",
+                    chosen_model, getattr(exc, "code", None), fallback,
+                )
+                response = self._generate(model=fallback, contents=contents, config=config)
+                chosen_model = fallback
+            else:
+                raise
         return self._to_result(response, chosen_model)
+
+    def _generate(self, **kwargs: Any) -> Any:
+        """generate_content with bounded exponential backoff on 429 / 5xx.
+
+        Matches the Anthropic SDK's built-in retry so a transient 503 "high
+        demand" degrades into a slightly slower answer instead of a failed
+        generation and the graph's extractive-fallback notice. Depth is
+        `LLM_MAX_RETRIES` (1 disables retrying).
+        """
+        import time
+
+        from google.genai import errors
+
+        attempts = max(1, self.settings.llm_max_retries)
+        delay = 2.0
+        for attempt in range(1, attempts + 1):
+            try:
+                return self._client.models.generate_content(**kwargs)
+            except errors.APIError as exc:
+                if not _is_retryable(exc) or attempt == attempts:
+                    raise
+                logger.warning(
+                    "Gemini %s on generate (attempt %d/%d), retrying in %.0fs",
+                    getattr(exc, "code", None) or getattr(exc, "status_code", None),
+                    attempt, attempts, delay,
+                )
+                time.sleep(delay)
+                delay *= 2
 
     def count_tokens(self, prompt: str, *, system: str | None = None) -> int:
         contents = [system, prompt] if system else prompt

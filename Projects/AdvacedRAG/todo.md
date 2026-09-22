@@ -54,3 +54,39 @@ A production-grade Kubernetes SRE copilot featuring:
 ## Getting Started
 
 _Setup instructions to be added as the implementation lands._
+
+## Improvement roadmap
+
+On this network huggingface.co is blocked, so retrieval silently degrades to
+lexical BM25 only (no dense arm, cross-encoder replaced by a lexical stand-in).
+Gemini's API — including embeddings — is reachable, so it becomes the on-network
+path back to real semantic retrieval.
+
+- [x] **P0 — Restore semantic retrieval via Gemini embeddings.** Added a
+      `GeminiEmbedder` (dense = `gemini-embedding-001` at 768 dims, sparse =
+      local BM25) selected with `RETRIEVAL_BACKEND=gemini`, reindexed. Retrieval
+      is true dense + sparse hybrid again; verified a paraphrase-only query
+      surfaces the right runbook that BM25 alone buried.
+  - [x] _(follow-up, done)_ Gemini-backed authoritative reranker replaces the
+        lexical stand-in — MRR/nDCG reach 1.00; also powers a 5/5 abstention
+        check on out-of-corpus questions.
+- [x] **P1 — Robustness & latency.** Retry/backoff on Gemini 429/5xx added to
+      both the chat and embeddings paths (`gemini-flash-latest` 503s ride
+      through as latency, not failure). Intent + scope guardrail calls now run
+      concurrently — `guardrail_input` dropped from ~2 sequential calls to ~1.
+      (The remaining grader calls are a data-dependency chain; not parallelizable
+      without changing semantics.)
+- [x] **Deployability — end-to-end.** `Dockerfile` (multi-stage, non-root,
+      healthcheck, gemini backend so no HF downloads), `.dockerignore`,
+      `docker-compose` app + one-shot ingest services behind an `app` profile,
+      and `DEPLOY.md`. Verified as far as this Docker-less machine allows: wheel
+      builds with the UI bundled, compose YAML parses, app runs env-only.
+- [x] **P2 — Measure it.** Added 8 paraphrase-only `HARD_RETRIEVAL` cases (the
+      existing golden set was saturated — BM25 already scored 1.00 on it). On
+      that hard subset the keyword→hybrid gain is now measured: MRR **0.40 → 0.94**
+      (hybrid weighted), and **1.00** with HyDE; BM25 also missed 1/8 docs
+      entirely (hit@5 0.88 → 1.00). Keyword backend collapses every strategy to
+      the BM25 row. Results in `eval_results/`. (Ragas answer-quality pass still
+      optional via `--answers --ragas`.)
+- [ ] **P3 — Doc drift.** README/overview still advertises a Streamlit UI and a
+      truncated course URL; the real UI is plain HTML/JS served by FastAPI.

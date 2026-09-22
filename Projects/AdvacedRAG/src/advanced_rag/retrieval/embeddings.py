@@ -201,6 +201,119 @@ class Embedder:
         return SparseVector(embedding.indices, embedding.values)
 
 
+class GeminiEmbedder:
+    """Dense embeddings via the Gemini API, sparse via the local BM25 impl.
+
+    Same surface as `Embedder`, so the store, retriever and graph branch on
+    `supports_dense`/`dim` and never learn which backend they got. This is the
+    on-network path to a real dense arm where huggingface.co is blocked: the
+    dense vectors come from the Gemini embeddings API (which is reachable), and
+    the sparse arm reuses the pure-Python BM25 implementation, since every
+    fastembed sparse model is HF-only just like the dense ones.
+    """
+
+    supports_dense = True
+    sparse_model_name = "local-bm25"
+
+    #: Documents and queries embed into the same space but with side-specific
+    #: optimisation, which measurably helps asymmetric (question -> passage)
+    #: retrieval - exactly the HyDE gap this project already works around.
+    _DOC_TASK = "RETRIEVAL_DOCUMENT"
+    _QUERY_TASK = "RETRIEVAL_QUERY"
+
+    def __init__(self, model: str, dim: int, api_key: str | None = None) -> None:
+        self.dense_model_name = model
+        self._dim = dim
+        self._api_key = api_key
+        self._client = None
+
+    @property
+    def client(self):
+        if self._client is None:
+            from google import genai
+
+            from advanced_rag.certs import enable_system_trust_store
+
+            # The embedding call is HTTPS to Google; on a TLS-inspecting proxy it
+            # needs the OS trust store like every other outbound request. Both
+            # calls are idempotent, so doing it here covers every entry point.
+            enable_system_trust_store()
+            self._client = genai.Client(api_key=self._api_key or None)
+        return self._client
+
+    @property
+    def dim(self) -> int:
+        return self._dim
+
+    # --------------------------------------------------------------- encoding
+
+    def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
+        return self._embed(list(texts), self._DOC_TASK)
+
+    def embed_query(self, text: str) -> list[float]:
+        return self._embed([text], self._QUERY_TASK)[0]
+
+    def _embed(self, texts: list[str], task_type: str) -> list[list[float]]:
+        from google.genai import types
+
+        config = types.EmbedContentConfig(
+            task_type=task_type, output_dimensionality=self._dim
+        )
+        response = _with_retry(
+            lambda: self.client.models.embed_content(
+                model=self.dense_model_name, contents=texts, config=config
+            )
+        )
+        # Truncating below the model's native 3072 dims leaves the vectors
+        # un-normalised, so cosine distance needs an explicit L2 pass. Harmless
+        # at full width, where they already arrive normalised.
+        return [_l2_normalize(list(e.values)) for e in response.embeddings]
+
+    # The sparse arm is the local BM25 implementation, exactly as KeywordEmbedder
+    # uses it - fastembed's sparse models are HF-only and unreachable here.
+    def sparse_documents(self, texts: Sequence[str]) -> list[SparseVector]:
+        return [SparseVector(*bm25.encode_document(text)) for text in texts]
+
+    def sparse_query(self, text: str) -> SparseVector:
+        return SparseVector(*bm25.encode_query(text))
+
+
+def _l2_normalize(vector: list[float]) -> list[float]:
+    import math
+
+    norm = math.sqrt(sum(v * v for v in vector))
+    if norm < 1e-12:
+        return vector
+    return [v / norm for v in vector]
+
+
+def _with_retry(call, *, attempts: int = 3, base_delay: float = 2.0):
+    """Retry a Gemini call through transient rate-limit / unavailability errors.
+
+    Scoped to the embeddings path for now; the broader client retry is P1. Only
+    retries errors that look transient (429/503) so a bad request fails fast.
+    """
+    import time
+
+    for attempt in range(1, attempts + 1):
+        try:
+            return call()
+        except Exception as exc:
+            message = str(exc)
+            transient = any(
+                token in message
+                for token in ("429", "RESOURCE_EXHAUSTED", "503", "UNAVAILABLE")
+            )
+            if not transient or attempt == attempts:
+                raise
+            delay = base_delay * (2 ** (attempt - 1))
+            logger.warning(
+                "Gemini embeddings transient error (attempt %d/%d), retrying in %.0fs: %s",
+                attempt, attempts, delay, message[:120],
+            )
+            time.sleep(delay)
+
+
 class LexicalReranker:
     """Fallback "reranker" for the keyword backend.
 
@@ -246,6 +359,84 @@ class Reranker:
         if not documents:
             return []
         return [float(s) for s in self.model.rerank(query, list(documents))]
+
+
+_RERANK_SYSTEM = """You are a retrieval reranker for a Kubernetes operations
+assistant. You are given a question and a numbered list of passages. Rate how
+well each passage helps answer the question, from 0.0 (irrelevant) to 1.0
+(directly answers it). Judge each passage independently on its own merits, not
+relative to the others. Return a relevance score for every passage index."""
+
+
+class GeminiReranker:
+    """LLM-scored reranker: one structured call rates every candidate 0..1.
+
+    Not a bi-directional cross-encoder, but authoritative in the sense the rest
+    of the pipeline needs - a model reads the question and each passage together
+    and rates relevance, which is what drives reordering and the CRAG relevance
+    floor. This is the reranker for a network that blocks huggingface.co (so the
+    fastembed cross-encoder is unreachable) but can reach the Gemini API.
+    """
+
+    #: True so the retriever treats the scores as authoritative: it reorders by
+    #: them and the CRAG floor trusts them, exactly as it does for a cross-encoder.
+    is_cross_encoder = True
+    model_name = "gemini-llm-reranker"
+
+    def __init__(self, settings=None, llm=None) -> None:
+        self.settings = settings or get_settings()
+        self._llm = llm
+
+    @property
+    def llm(self):
+        if self._llm is None:
+            from advanced_rag.llm.client import get_llm
+
+            self._llm = get_llm()
+        return self._llm
+
+    def score(self, query: str, documents: Sequence[str]) -> list[float]:
+        from advanced_rag.llm.client import llm_available
+
+        docs = list(documents)
+        if not docs:
+            return []
+        # Neutral logits (-> sigmoid 0.5) preserve the incoming order when no model
+        # is available; the retriever tiebreaks on the retrieval score.
+        if not llm_available():
+            return [0.0 for _ in docs]
+
+        from pydantic import BaseModel, Field
+
+        class _PassageScore(BaseModel):
+            index: int = Field(description="0-based index of the passage")
+            relevance: float = Field(description="0.0 (irrelevant) to 1.0 (directly answers)")
+
+        class _RerankScores(BaseModel):
+            scores: list[_PassageScore]
+
+        numbered = "\n\n".join(f"[{i}] {text}" for i, text in enumerate(docs))
+        prompt = f"Question:\n{query}\n\nPassages:\n{numbered}\n\nScore every passage."
+        try:
+            result = self.llm.complete_json(
+                prompt,
+                _RerankScores,
+                system=_RERANK_SYSTEM,
+                model=self.settings.llm_fast_model,
+                effort="low",
+                max_tokens=4_000,
+            )
+        except Exception as exc:  # a rerank failure must not fail the request
+            logger.warning(
+                "Gemini reranker unavailable (%s) - preserving retrieval order",
+                type(exc).__name__,
+            )
+            return [0.0 for _ in docs]
+
+        by_index = {s.index: max(0.0, min(1.0, s.relevance)) for s in result.scores}
+        # Map 0..1 relevance onto roughly -6..6 so the caller's sigmoid recovers a
+        # well-spread score - the same convention LexicalReranker uses.
+        return [(by_index.get(i, 0.0) - 0.5) * 12.0 for i in range(len(docs))]
 
 
 def normalize_scores(scores: Iterable[float]) -> list[float]:
@@ -306,12 +497,21 @@ def _prepare_downloads() -> None:
 
 
 @lru_cache
-def get_embedder() -> Embedder | KeywordEmbedder:
+def get_embedder() -> Embedder | KeywordEmbedder | GeminiEmbedder:
     """Resolve the retrieval backend, probing fastembed when set to "auto"."""
     settings = get_settings()
     if settings.retrieval_backend == "keyword":
         logger.info("Retrieval backend: local BM25 (keyword)")
         return KeywordEmbedder()
+
+    if settings.retrieval_backend == "gemini":
+        logger.info(
+            "Retrieval backend: Gemini dense %s (dim=%d) + sparse local BM25",
+            settings.embed_model, settings.embed_dim,
+        )
+        return GeminiEmbedder(
+            settings.embed_model, settings.embed_dim, api_key=settings.google_api_key
+        )
 
     _prepare_downloads()
     embedder = Embedder(settings.dense_model, settings.sparse_model, cache_dir=_cache_dir())
@@ -347,12 +547,19 @@ def get_reranker() -> Reranker | LexicalReranker:
     """Cross-encoder when the models are available, lexical overlap otherwise."""
     settings = get_settings()
     if (
-        settings.retrieval_backend == "keyword"
-        or settings.rerank_model in LOCAL_RERANK_ALIASES
+        settings.rerank_model in LOCAL_RERANK_ALIASES
+        or settings.retrieval_backend == "keyword"
         or not get_embedder().supports_dense
     ):
         logger.info("Reranker: local lexical scorer (no cross-encoder)")
         return LexicalReranker()
+
+    if settings.retrieval_backend == "gemini":
+        # No fastembed cross-encoder here (HF-only), but the Gemini API can score
+        # (question, passage) relevance directly. Authoritative, so it reorders
+        # and feeds the CRAG floor. Opt out with RERANK_MODEL=local-lexical.
+        logger.info("Reranker: Gemini LLM-scored (authoritative)")
+        return GeminiReranker(settings)
 
     _prepare_downloads()
     reranker = Reranker(settings.rerank_model, cache_dir=_cache_dir())

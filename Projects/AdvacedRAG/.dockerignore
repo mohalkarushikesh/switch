@@ -1,0 +1,30 @@
+# Build context hygiene: only pyproject/Readme/src/ui are needed to build the
+# wheel. Everything below is either a secret, a local-only artifact, or noise
+# that would bust the layer cache.
+.venv/
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Secrets and local config - config comes from environment variables at runtime.
+.env
+.env.*
+!.env.example
+
+# Local data stores (the image builds its index at deploy time via rag-ingest).
+data/
+.fastembed_cache/
+eval_results/
+
+# Dev-only
+.git/
+.gitignore
+.pytest_cache/
+.ruff_cache/
+tests/
+scripts/
+run.ps1
+ragserver.log
+*.log
