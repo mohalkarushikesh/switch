@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from .agents import ApprovalAgent, IngestAgent, PaymentAgent, RiskAgent
 from .config import settings
-from .governance import AuditLog, PIIRedactor, PolicyEngine
+from .governance import AuditLog, NearDuplicate, PIIRedactor, PolicyEngine
 from .ledger import Ledger
 from .models import ApprovalDecision, Invoice, InvoiceStatus, ProcessedInvoice
 from .notify import Notification, Notifier
@@ -53,10 +53,20 @@ class Custodian:
         # Model tracking (optional): log each scoring decision to MLflow.
         self.tracker = tracker
 
-    def process(self, invoice: Invoice, is_duplicate: bool = False) -> ProcessedInvoice:
+    def process(
+        self,
+        invoice: Invoice,
+        is_duplicate: bool = False,
+        account_changed: bool = False,
+        near_duplicate: NearDuplicate | None = None,
+    ) -> ProcessedInvoice:
         """Run one invoice through the full pipeline and return its record.
 
         is_duplicate is passed to the policy layer, which blocks re-submissions.
+        account_changed flags a new payee account for a known vendor (BEC vector),
+        which the policy layer routes to human review.
+        near_duplicate flags an evasive re-submission (a prior invoice this one
+        closely resembles despite a different id) for human confirmation.
         """
         record = ProcessedInvoice(invoice=invoice, status=InvoiceStatus.RECEIVED)
         record.audit_trail.append(
@@ -89,7 +99,12 @@ class Custodian:
         )
 
         # 3. Policy governance — deterministic rules that can override approval.
-        violations = self.policy.evaluate(invoice, is_duplicate=is_duplicate)
+        violations = self.policy.evaluate(
+            invoice,
+            is_duplicate=is_duplicate,
+            account_changed=account_changed,
+            near_duplicate=near_duplicate,
+        )
         record.policy_violations = violations
         for v in violations:
             record.audit_trail.append(f"Policy [{v.severity}] {v.code}: {v.message}")
@@ -170,10 +185,29 @@ class Custodian:
         record.audit_trail.append(f"Notification sent ({', '.join(events)}).")
 
     def process_many(self, invoices: list[Invoice]) -> list[ProcessedInvoice]:
-        """Process a batch of invoices in order, flagging in-batch duplicates."""
+        """Process a batch in order, flagging in-batch duplicates, vendor account
+        changes, and near-duplicates (each invoice is compared against the ones
+        seen earlier in the batch for the same vendor)."""
+        from .governance import find_near_duplicate
+
         seen: set[str] = set()
+        vendor_accounts: dict[str, set[str]] = {}
+        vendor_invoices: dict[str, list[Invoice]] = {}
         records: list[ProcessedInvoice] = []
         for inv in invoices:
-            records.append(self.process(inv, is_duplicate=inv.invoice_id in seen))
+            vkey = inv.vendor_name.strip().lower()
+            known = vendor_accounts.get(vkey, set())
+            account_changed = bool(known) and inv.vendor_account not in known
+            near_duplicate = find_near_duplicate(
+                inv, vendor_invoices.get(vkey, []), threshold=settings.dedup_threshold
+            )
+            records.append(self.process(
+                inv,
+                is_duplicate=inv.invoice_id in seen,
+                account_changed=account_changed,
+                near_duplicate=near_duplicate,
+            ))
             seen.add(inv.invoice_id)
+            vendor_accounts.setdefault(vkey, set()).add(inv.vendor_account)
+            vendor_invoices.setdefault(vkey, []).append(inv)
         return records

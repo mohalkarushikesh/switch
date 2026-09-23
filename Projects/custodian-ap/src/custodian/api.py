@@ -13,6 +13,7 @@ Run locally:
 
 from __future__ import annotations
 
+import logging
 from datetime import date
 from pathlib import Path
 
@@ -22,8 +23,16 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .agents import IngestAgent
-from .config import get_runtime_disable_llm, set_runtime_disable_llm, settings
+from .config import (
+    get_runtime_disable_llm,
+    llm_config_warning,
+    set_runtime_disable_llm,
+    settings,
+)
 from .db import Database, SqliteAuditLog, SqliteStore
+from .governance import find_near_duplicate
+from .llm import scoring_counts
+from .local_llm import local_counts
 from .ledger import Ledger, Transaction
 from .models import ApprovalDecision, Invoice, InvoiceStatus, ProcessedInvoice
 from .notify import LogNotifier, MultiNotifier, Notifier, WebhookNotifier
@@ -35,6 +44,12 @@ app = FastAPI(
     version="0.1.0",
     description="Governed multi-agent pipeline: ingest → risk → approval → auto-pay.",
 )
+
+# Announce at startup *why* scoring would use the heuristic (missing/mismatched
+# provider key, or a kill-switch) so a silent degrade is visible in the logs.
+_startup_warning = llm_config_warning()
+if _startup_warning:
+    logging.getLogger("custodian").warning(_startup_warning)
 
 @app.middleware("http")
 async def no_cache_html(request, call_next):
@@ -207,6 +222,34 @@ def set_scoring_mode(payload: ScoringModeIn, _=Depends(require_role("admin"))) -
     }
 
 
+def _run_pipeline(invoice: Invoice) -> ProcessedInvoice:
+    """Compute governance signals from history, run the pipeline, persist.
+
+    Shared by the submit / OCR / batch endpoints so the duplicate and
+    vendor-account-change detection stays identical across all three. In a batch
+    each record is saved before the next runs, so within-batch history is seen.
+    """
+    is_duplicate = _store.has(invoice.invoice_id)
+    # BEC / vendor-impersonation signal: vendor paid before, but a new payee account.
+    known_accounts = _store.known_vendor_accounts(invoice.vendor_name)
+    account_changed = bool(known_accounts) and invoice.vendor_account not in known_accounts
+    # Evasive double-payment signal: near-identical to a prior same-vendor invoice.
+    near_duplicate = find_near_duplicate(
+        invoice,
+        _store.invoices_by_vendor(invoice.vendor_name),
+        threshold=settings.dedup_threshold,
+    )
+    record = _custodian.process(
+        invoice,
+        is_duplicate=is_duplicate,
+        account_changed=account_changed,
+        near_duplicate=near_duplicate,
+    )
+    if not is_duplicate:
+        _store.save(record)
+    return record
+
+
 @app.post("/invoices", response_model=ProcessedInvoice)
 def submit_invoice(payload: InvoiceIn, _=Depends(require_role("submitter"))) -> ProcessedInvoice:
     """Run one invoice through the pipeline and persist the result.
@@ -214,12 +257,7 @@ def submit_invoice(payload: InvoiceIn, _=Depends(require_role("submitter"))) -> 
     A re-submitted invoice id is flagged as a duplicate (blocked by policy) and
     does NOT overwrite the original record — only the attempt is audited.
     """
-    invoice = Invoice(**payload.model_dump())
-    is_duplicate = _store.has(invoice.invoice_id)
-    record = _custodian.process(invoice, is_duplicate=is_duplicate)
-    if not is_duplicate:
-        _store.save(record)
-    return record
+    return _run_pipeline(Invoice(**payload.model_dump()))
 
 
 class OCRIn(BaseModel):
@@ -238,11 +276,7 @@ def submit_ocr(payload: OCRIn, _=Depends(require_role("submitter"))) -> Processe
             status_code=422,
             detail=f"Could not extract a valid invoice from the text: {exc}",
         )
-    is_duplicate = _store.has(invoice.invoice_id)
-    record = _custodian.process(invoice, is_duplicate=is_duplicate)
-    if not is_duplicate:
-        _store.save(record)
-    return record
+    return _run_pipeline(invoice)
 
 
 @app.post("/invoices/batch", response_model=list[ProcessedInvoice])
@@ -250,12 +284,7 @@ def submit_invoices(payloads: list[InvoiceIn], _=Depends(require_role("submitter
     """Run a batch of invoices through the pipeline in one call."""
     records = []
     for payload in payloads:
-        invoice = Invoice(**payload.model_dump())
-        is_duplicate = _store.has(invoice.invoice_id)
-        record = _custodian.process(invoice, is_duplicate=is_duplicate)
-        if not is_duplicate:
-            _store.save(record)
-        records.append(record)
+        records.append(_run_pipeline(Invoice(**payload.model_dump())))
     return records
 
 
@@ -423,7 +452,12 @@ def metrics() -> str:
         "# HELP custodian_ledger_balance Current mock-ledger balance.",
         "# TYPE custodian_ledger_balance gauge",
         f"custodian_ledger_balance {_ledger.balance}",
+        "# HELP custodian_llm_scoring_total Risk-scoring outcomes by result.",
+        "# TYPE custodian_llm_scoring_total counter",
     ]
+    outcomes = {**scoring_counts(), **local_counts()}
+    for outcome, count in sorted(outcomes.items()):
+        lines.append(f'custodian_llm_scoring_total{{outcome="{outcome}"}} {count}')
     return "\n".join(lines) + "\n"
 
 

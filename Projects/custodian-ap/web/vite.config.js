@@ -6,7 +6,7 @@ import react from '@vitejs/plugin-react'
 // static bundle into dist/ that FastAPI serves at /app.
 const API = 'http://localhost:8000'
 const proxy = Object.fromEntries(
-  ['/invoices', '/health', '/stats', '/metrics', '/ledger', '/policies', '/audit'].map(
+  ['/invoices', '/health', '/stats', '/metrics', '/ledger', '/policies', '/audit', '/scoring-mode'].map(
     (p) => [p, { target: API, changeOrigin: true }],
   ),
 )

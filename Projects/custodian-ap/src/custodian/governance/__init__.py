@@ -7,6 +7,7 @@
 
 from .audit import AuditLog
 from .data import PIIRedactor
+from .dedup import NearDuplicate, find_near_duplicate
 from .policy import PolicyEngine
 
-__all__ = ["AuditLog", "PIIRedactor", "PolicyEngine"]
+__all__ = ["AuditLog", "PIIRedactor", "PolicyEngine", "NearDuplicate", "find_near_duplicate"]

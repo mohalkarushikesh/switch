@@ -17,10 +17,42 @@ Set CUSTODIAN_LLM_API_BASE to put a LiteLLM proxy in front of any of them.
 from __future__ import annotations
 
 import json
+import logging
 import re
+import time
 
 from .config import settings
 from .models import Invoice
+
+logger = logging.getLogger("custodian.llm")
+
+# Outcome tally for the risk-scoring path, exported to /metrics. Makes the
+# silent LLM->heuristic fallback *visible*: a rising "failed"/"unparseable"
+# count is the signal that scoring quietly degraded (a bad key, a retired
+# model, a TLS error), which is otherwise indistinguishable from "no LLM".
+_SCORING_COUNTS: dict[str, int] = {
+    "llm_success": 0,      # LLM returned a parseable assessment
+    "llm_failed": 0,       # call raised (auth/network/rate-limit) after retries
+    "llm_unparseable": 0,  # call returned, but no usable JSON came back
+    "not_configured": 0,   # no key/base, or a kill-switch is on
+}
+
+
+def scoring_counts() -> dict[str, int]:
+    """Snapshot of risk-scoring outcomes since startup (for /metrics)."""
+    return dict(_SCORING_COUNTS)
+
+
+def _transient_exc_types() -> tuple[type, ...]:
+    """LiteLLM exception types worth retrying — resolved defensively so a stubbed
+    `litellm` (as in the tests) simply yields an empty tuple (retry nothing)."""
+    import litellm
+
+    names = (
+        "RateLimitError", "ServiceUnavailableError", "InternalServerError",
+        "APIConnectionError", "Timeout", "APITimeoutError",
+    )
+    return tuple(t for t in (getattr(litellm, n, None) for n in names) if isinstance(t, type))
 
 # System prompt: constrain the model to a strict JSON contract we can parse.
 _SYSTEM_PROMPT = (
@@ -71,11 +103,13 @@ def score_invoice_with_llm(invoice: Invoice) -> dict | None:
     LLM is unavailable or the response can't be parsed.
     """
     if not settings.has_llm_credentials:
+        _SCORING_COUNTS["not_configured"] += 1
         return None
 
     try:
         import litellm
     except ImportError:
+        _SCORING_COUNTS["not_configured"] += 1
         return None
 
     # Route through a LiteLLM proxy/gateway when configured, else call the
@@ -94,24 +128,47 @@ def score_invoice_with_llm(invoice: Invoice) -> dict | None:
         extra["max_tokens"] = 1024
     else:
         extra["temperature"] = 0  # deterministic scoring
+    extra["timeout"] = settings.llm_timeout
 
-    try:
-        response = litellm.completion(
-            model=settings.llm_model,
-            messages=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": _build_user_prompt(invoice)},
-            ],
-            **extra,
-        )
-        content = response.choices[0].message.content or ""
-    except Exception:
-        # Network error, auth failure, rate limit, etc. — degrade gracefully.
-        return None
+    messages = [
+        {"role": "system", "content": _SYSTEM_PROMPT},
+        {"role": "user", "content": _build_user_prompt(invoice)},
+    ]
+
+    # Retry only transient failures (rate-limit / 5xx / connection). Auth errors,
+    # bad model names, and parse failures are permanent, so we don't waste calls.
+    transient = _transient_exc_types()
+    attempts = max(1, settings.llm_max_retries + 1)
+    content = None
+    for attempt in range(attempts):
+        try:
+            response = litellm.completion(model=settings.llm_model, messages=messages, **extra)
+            content = response.choices[0].message.content or ""
+            break
+        except transient as exc:
+            if attempt + 1 < attempts:
+                logger.warning(
+                    "LLM scoring transient error (attempt %d/%d), retrying: %s",
+                    attempt + 1, attempts, exc,
+                )
+                time.sleep(min(2 ** attempt, 8))  # 1s, 2s, 4s… capped
+                continue
+            logger.warning("LLM scoring failed after %d attempts: %s", attempts, exc)
+            _SCORING_COUNTS["llm_failed"] += 1
+            return None
+        except Exception as exc:
+            # Auth failure, retired/unknown model, bad request — permanent.
+            logger.warning("LLM scoring failed (%s): %s", type(exc).__name__, exc)
+            _SCORING_COUNTS["llm_failed"] += 1
+            return None
 
     parsed = _extract_json(content)
     if not parsed or "risk_score" not in parsed:
+        logger.warning("LLM scoring returned no usable JSON; falling back to heuristic.")
+        _SCORING_COUNTS["llm_unparseable"] += 1
         return None
+
+    _SCORING_COUNTS["llm_success"] += 1
 
     # Normalize into the shape the risk agent expects.
     return {

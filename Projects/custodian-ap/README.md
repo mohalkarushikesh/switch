@@ -168,13 +168,19 @@ cp .env.example .env          # add OPENAI_API_KEY / GROQ_API_KEY, tweak thresho
 # --- Run any of the three entry points ---
 
 # a) CLI on the bundled sample invoices (src/ layout -> set PYTHONPATH)
-PYTHONPATH=src python -m custodian.main
+PYTHONPATH=src python -m custodian.main        
+
+$env:PYTHONPATH = 'src'; uvicorn custodian.api:app --reload --port 8000
+
 
 # b) REST API + dashboards
 PYTHONPATH=src uvicorn custodian.api:app --reload
 #    -> API docs:        http://localhost:8000/docs
 #    -> Console UI:      http://localhost:8000/ui/       (zero-build, always available)
 #    -> React app:       http://localhost:8000/app/      (after building it, see below)
+
+$env:PYTHONPATH = 'src'; uvicorn custodian.api:app --reload --port 8000 
+
 
 # b2) Build the React web app (served at /app; dev server with live reload on :5173)
 cd web && npm install && npm run build      # -> /app/ starts serving

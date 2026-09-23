@@ -15,3 +15,8 @@ data/audit*.jsonl
 data/*.db
 mlruns/
 mlflow.db
+
+# Local model weights (large; fetched from ModelScope, not committed)
+data/models/
+*.safetensors
+*.gguf

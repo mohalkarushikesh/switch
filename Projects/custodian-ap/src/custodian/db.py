@@ -16,7 +16,7 @@ import sqlite3
 import threading
 from pathlib import Path
 
-from .models import ProcessedInvoice
+from .models import Invoice, ProcessedInvoice
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS processed_invoices (
@@ -113,6 +113,30 @@ class SqliteStore:
                 (invoice_id,),
             )
         )
+
+    def invoices_by_vendor(self, vendor_name: str) -> list[Invoice]:
+        """Prior invoices for this vendor (case-insensitive), as Invoice objects —
+        the candidate set for near-duplicate comparison."""
+        rows = self.db.query(
+            "SELECT payload FROM processed_invoices WHERE lower(vendor_name) = lower(?)",
+            (vendor_name,),
+        )
+        return [ProcessedInvoice.model_validate_json(r["payload"]).invoice for r in rows]
+
+    def known_vendor_accounts(self, vendor_name: str) -> set[str]:
+        """Every payee account previously seen for this vendor (case-insensitive
+        name match). Used to detect a new-account / BEC change. The account lives
+        in the JSON payload, so parse it out rather than adding a column+migration."""
+        rows = self.db.query(
+            "SELECT payload FROM processed_invoices WHERE lower(vendor_name) = lower(?)",
+            (vendor_name,),
+        )
+        accounts: set[str] = set()
+        for r in rows:
+            acct = (json.loads(r["payload"]).get("invoice") or {}).get("vendor_account")
+            if acct:
+                accounts.add(acct)
+        return accounts
 
     def delete(self, invoice_id: str) -> None:
         """Remove a processed invoice (no-op if it doesn't exist)."""

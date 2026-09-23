@@ -24,6 +24,17 @@ def _get_int(name: str, default: int) -> int:
         return default
 
 
+def _get_float(name: str, default: float) -> float:
+    """Read a float env var, falling back to the default if unset/invalid."""
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
 def _get_bool(name: str, default: bool) -> bool:
     """Read a boolean env var. Truthy: 1/true/yes/on (case-insensitive)."""
     raw = os.getenv(name)
@@ -50,6 +61,10 @@ class Settings:
     anthropic_api_key: str | None     # Anthropic API key (claude-* via LiteLLM)
     gemini_api_key: str | None        # Google Gemini API key (gemini/* via LiteLLM)
     disable_llm: bool          # hard kill-switch: always use the heuristic scorer
+    llm_timeout: int           # per-call timeout (seconds) handed to LiteLLM
+    llm_max_retries: int       # extra attempts on transient errors (429/503/network)
+    local_model_path: str | None   # dir of an on-device model; enables the local tier
+    local_model_max_tokens: int    # generation cap for the local scorer
 
     # Approval-routing thresholds
     auto_pay_max_risk: int
@@ -62,6 +77,7 @@ class Settings:
     # Governance
     policy_max_amount: int          # absolute ceiling; any invoice above is blocked
     blocked_vendors: tuple[str, ...]  # denied vendor names (lower-cased)
+    dedup_threshold: float          # 0..1 similarity at/above which a near-duplicate flags
     audit_log_path: str | None      # if set, processed invoices are appended here as JSONL
 
     # Persistence
@@ -140,6 +156,10 @@ def load_settings() -> Settings:
             os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or None
         ),
         disable_llm=_get_bool("CUSTODIAN_DISABLE_LLM", False),
+        llm_timeout=_get_int("CUSTODIAN_LLM_TIMEOUT", 30),
+        llm_max_retries=_get_int("CUSTODIAN_LLM_MAX_RETRIES", 2),
+        local_model_path=os.getenv("CUSTODIAN_LOCAL_MODEL") or None,
+        local_model_max_tokens=_get_int("CUSTODIAN_LOCAL_MODEL_MAX_TOKENS", 200),
         auto_pay_max_risk=_get_int("CUSTODIAN_AUTO_PAY_MAX_RISK", 30),
         auto_pay_max_amount=_get_int("CUSTODIAN_AUTO_PAY_MAX_AMOUNT", 5000),
         reject_min_risk=_get_int("CUSTODIAN_REJECT_MIN_RISK", 75),
@@ -150,6 +170,7 @@ def load_settings() -> Settings:
             for v in os.getenv("CUSTODIAN_BLOCKED_VENDORS", "").split(",")
             if v.strip()
         ),
+        dedup_threshold=_get_float("CUSTODIAN_DEDUP_THRESHOLD", 0.85),
         audit_log_path=os.getenv("CUSTODIAN_AUDIT_LOG") or None,
         db_path=os.getenv("CUSTODIAN_DB_PATH") or "data/custodian.db",
         pii_backend=(os.getenv("CUSTODIAN_PII_BACKEND") or "regex").lower(),
@@ -176,6 +197,25 @@ def set_runtime_disable_llm(value: bool) -> None:
 
 def get_runtime_disable_llm() -> bool:
     return _runtime_disable_llm
+
+
+def llm_config_warning() -> str | None:
+    """One-line diagnosis of *why* scoring would use the heuristic, or None if the
+    LLM path is properly configured.
+
+    Surfaced at startup so a provider/key mismatch (e.g. a gemini/* model with no
+    GEMINI_API_KEY) announces itself in the logs instead of silently degrading to
+    heuristic scoring — the failure mode that is otherwise invisible.
+    """
+    if settings.disable_llm:
+        return "CUSTODIAN_DISABLE_LLM is set — all risk scoring uses the offline heuristic."
+    if not (settings.llm_api_credential or settings.llm_api_base):
+        return (
+            f"No API key for provider '{settings.llm_provider}' "
+            f"(CUSTODIAN_LLM_MODEL={settings.llm_model!r}); risk scoring will fall "
+            f"back to the heuristic. Set the provider's key or a LiteLLM api_base."
+        )
+    return None
 
 
 # Module-level singleton used throughout the app

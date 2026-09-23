@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 os.environ.pop("OPENAI_API_KEY", None)
 os.environ.pop("GROQ_API_KEY", None)
 
-from custodian.governance import AuditLog, PIIRedactor, PolicyEngine  # noqa: E402
+from custodian.governance import AuditLog, PIIRedactor, PolicyEngine, find_near_duplicate  # noqa: E402
 from custodian.ledger import Ledger  # noqa: E402
 from custodian.models import Invoice, InvoiceStatus  # noqa: E402
 from custodian.orchestrator import Custodian  # noqa: E402
@@ -100,6 +100,80 @@ def test_policy_flag_downgrades_autopay_to_review():
     record = custodian.process(_invoice(amount=500.0, vendor_account="AB1"))
     assert record.status is InvoiceStatus.NEEDS_REVIEW
     assert any(v.code == "weak_vendor_account" for v in record.policy_violations)
+
+
+def test_policy_flags_vendor_account_change():
+    engine = PolicyEngine()
+    violations = engine.evaluate(_invoice(), account_changed=True)
+    assert any(
+        v.code == "vendor_account_changed" and v.severity == "flag" for v in violations
+    )
+    # Not flagged when the account is unchanged.
+    assert not any(
+        v.code == "vendor_account_changed" for v in engine.evaluate(_invoice())
+    )
+
+
+def test_account_change_downgrades_autopay_to_review():
+    # A small, low-risk invoice with a valid account would auto-pay, but a new
+    # payee account for a known vendor (BEC vector) forces human review instead.
+    custodian = Custodian(Ledger(balance=1_000_000))
+    record = custodian.process(
+        _invoice(amount=500.0, vendor_account="NEW-CHK-999999"), account_changed=True
+    )
+    assert record.status is InvoiceStatus.NEEDS_REVIEW
+    assert record.payment.paid is False
+    assert any(v.code == "vendor_account_changed" for v in record.policy_violations)
+
+
+def test_near_duplicate_is_detected():
+    original = _invoice(invoice_id="ND-1", amount=12000.0, line_items=["Server rack", "Cabling"])
+    # Same vendor/amount/items, a day apart, different id -> evasive resubmission.
+    resubmit = _invoice(invoice_id="ND-2", amount=12000.0, line_items=["Server rack", "Cabling"],
+                        issue_date=date(2026, 8, 2))
+    match = find_near_duplicate(resubmit, [original])
+    assert match is not None and match.invoice_id == "ND-1"
+    assert match.score >= 0.85
+
+
+def test_distinct_invoices_are_not_near_duplicates():
+    a = _invoice(invoice_id="ND-A", amount=12000.0, line_items=["Server rack"])
+    b = _invoice(invoice_id="ND-B", amount=250.0, line_items=["Coffee beans"],
+                 issue_date=date(2026, 3, 1))
+    assert find_near_duplicate(b, [a]) is None
+
+
+def test_near_duplicate_skips_same_id():
+    # An exact re-submission (same id) is a hard duplicate, handled elsewhere —
+    # it must not also surface as a near-duplicate of itself.
+    inv = _invoice(invoice_id="ND-SAME", amount=12000.0)
+    assert find_near_duplicate(inv, [inv]) is None
+
+
+def test_near_duplicate_downgrades_autopay_to_review():
+    prior = _invoice(invoice_id="ND-P", amount=500.0, line_items=["Consulting"])
+    match = find_near_duplicate(
+        _invoice(invoice_id="ND-Q", amount=500.0, line_items=["Consulting"]), [prior]
+    )
+    custodian = Custodian(Ledger(balance=1_000_000))
+    record = custodian.process(_invoice(invoice_id="ND-Q", amount=500.0), near_duplicate=match)
+    assert record.status is InvoiceStatus.NEEDS_REVIEW
+    assert any(v.code == "possible_duplicate" for v in record.policy_violations)
+
+
+def test_batch_flags_in_batch_account_change():
+    # First invoice sets the vendor's baseline account; a later one with a
+    # different account is flagged within the same batch.
+    custodian = Custodian(Ledger(balance=1_000_000))
+    records = custodian.process_many([
+        _invoice(invoice_id="B-1", amount=500.0, vendor_account="ACME-CHK-111111"),
+        _invoice(invoice_id="B-2", amount=500.0, vendor_account="ACME-CHK-222222"),
+        _invoice(invoice_id="B-3", amount=500.0, vendor_account="ACME-CHK-111111"),
+    ])
+    codes = [{v.code for v in r.policy_violations} for r in records]
+    assert "vendor_account_changed" not in codes[0]   # baseline
+    assert "vendor_account_changed" in codes[1]        # new account -> flagged
+    assert "vendor_account_changed" not in codes[2]    # back to a known account
 
 
 # --- Audit layer ---

@@ -1,39 +1,66 @@
 """Risk agent: score an invoice for fraud/risk.
 
-Primary path uses an LLM via LiteLLM. If that's unavailable (no API key,
-network error, unparseable response), it falls back to a transparent
-rule-based heuristic so the pipeline always produces an assessment.
+Scoring is a fall-through chain of three tiers, tried in order:
+
+    1. local model  — on-device transformers model (offline, no cost), if
+                       CUSTODIAN_LOCAL_MODEL is set;
+    2. API LLM      — a provider via LiteLLM, if a key/base is configured;
+    3. heuristic    — a transparent rule-based scorer that always succeeds.
+
+The first tier to return a result wins, so the pipeline always produces an
+assessment regardless of network, keys, or model availability.
 """
 
 from __future__ import annotations
 
+from ..config import settings
 from ..llm import score_invoice_with_llm
+from ..local_llm import score_invoice_locally
 from ..models import Invoice, RiskAssessment
 
 
 class RiskAgent:
     def assess(self, invoice: Invoice, llm_invoice: Invoice | None = None) -> RiskAssessment:
-        """Return a RiskAssessment, preferring the LLM and falling back to rules.
+        """Return a RiskAssessment via the local -> API -> heuristic chain.
 
-        llm_invoice, if given, is the PII-redacted view sent to the LLM; the
+        llm_invoice, if given, is the PII-redacted view sent to any model; the
         heuristic path always scores the original invoice.
         """
-        llm_result = score_invoice_with_llm(llm_invoice or invoice)
+        view = llm_invoice or invoice
+
+        # Tier 1: on-device model (only when CUSTODIAN_LOCAL_MODEL is configured).
+        local_result = score_invoice_locally(view)
+        if local_result is not None:
+            return self._from_model(local_result, source="local-llm")
+
+        # Tier 2: API LLM via LiteLLM.
+        llm_result = score_invoice_with_llm(view)
         if llm_result is not None:
-            score = max(0, min(100, llm_result["risk_score"]))  # clamp to 0-100
-            return RiskAssessment(
-                risk_score=score,
-                fraud_flags=llm_result["fraud_flags"],
-                rationale=llm_result["rationale"],
-                source="llm",
-            )
-        return self._heuristic(invoice)
+            return self._from_model(llm_result, source="llm")
+
+        # Tier 3: heuristic. Distinguish "no model was ever configured" from "a
+        # model was configured but every tier failed" — otherwise a real outage
+        # reads as 'no LLM configured' (the exact confusion a bad key caused).
+        model_configured = bool(settings.local_model_path) or settings.has_llm_credentials
+        return self._heuristic(invoice, llm_configured=model_configured)
 
     @staticmethod
-    def _heuristic(invoice: Invoice) -> RiskAssessment:
-        """Simple, explainable scoring used when no LLM is available.
+    def _from_model(result: dict, source: str) -> RiskAssessment:
+        """Build an assessment from a model tier's parsed result (score clamped)."""
+        return RiskAssessment(
+            risk_score=max(0, min(100, result["risk_score"])),
+            fraud_flags=result["fraud_flags"],
+            rationale=result["rationale"],
+            source=source,
+        )
+
+    @staticmethod
+    def _heuristic(invoice: Invoice, llm_configured: bool = False) -> RiskAssessment:
+        """Simple, explainable scoring used when the LLM path doesn't produce a result.
 
         Each rule adds points and a flag; the total (capped at 100) is the score.
+        llm_configured distinguishes a genuine LLM outage (True — a key is set but
+        the call failed) from no LLM being configured at all (False).
         """
         score = 0
         flags: list[str] = []
@@ -73,8 +100,13 @@ class RiskAgent:
             flags.append("due date precedes issue date")
 
         score = min(100, score)
+        why = (
+            "LLM configured but unavailable — call failed or returned no usable result"
+            if llm_configured
+            else "no LLM configured"
+        )
         rationale = (
-            "Heuristic scoring (no LLM configured). "
+            f"Heuristic scoring ({why}). "
             + ("Flags: " + ", ".join(flags) + "." if flags else "No risk signals detected.")
         )
         return RiskAssessment(

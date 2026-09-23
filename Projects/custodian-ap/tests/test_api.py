@@ -81,6 +81,53 @@ def test_get_missing_invoice_returns_404():
     assert client.get("/invoices/does-not-exist").status_code == 404
 
 
+def test_vendor_account_change_is_detected_across_submissions():
+    # First invoice for a vendor establishes the baseline account and pays.
+    first = _clean_invoice("ACCT-1", 900.0)
+    first.update(vendor_name="Beta Logistics", vendor_account="BETA-CHK-100001")
+    r1 = client.post("/invoices", json=first).json()
+    assert not any(v["code"] == "vendor_account_changed" for v in r1["policy_violations"])
+    assert r1["status"] == "paid"
+
+    # Same vendor, NEW payee account -> BEC vector -> flagged to human review.
+    second = _clean_invoice("ACCT-2", 900.0)
+    second.update(vendor_name="Beta Logistics", vendor_account="BETA-CHK-999999")
+    r2 = client.post("/invoices", json=second).json()
+    assert r2["status"] == "needs_review"
+    assert any(v["code"] == "vendor_account_changed" for v in r2["policy_violations"])
+
+    # Reusing a previously-seen account is fine again.
+    third = _clean_invoice("ACCT-3", 900.0)
+    third.update(vendor_name="Beta Logistics", vendor_account="BETA-CHK-100001")
+    r3 = client.post("/invoices", json=third).json()
+    assert not any(v["code"] == "vendor_account_changed" for v in r3["policy_violations"])
+
+
+def test_near_duplicate_invoice_is_flagged_across_submissions():
+    # First submission of a distinctive invoice is processed normally.
+    first = _clean_invoice("DUP-ORIG", 3300.0)
+    first.update(vendor_name="Gamma Freight", vendor_account="GAMMA-CHK-500001",
+                 line_items=["Container haulage", "Fuel surcharge"], memo="Shipment 4471")
+    r1 = client.post("/invoices", json=first).json()
+    assert not any(v["code"] == "possible_duplicate" for v in r1["policy_violations"])
+
+    # Same invoice resubmitted with a tweaked id (evasive double-payment) -> flagged.
+    dupe = _clean_invoice("DUP-EVADE", 3300.0)
+    dupe.update(vendor_name="Gamma Freight", vendor_account="GAMMA-CHK-500001",
+                line_items=["Container haulage", "Fuel surcharge"], memo="Shipment 4471")
+    r2 = client.post("/invoices", json=dupe).json()
+    assert r2["status"] == "needs_review"
+    assert any(v["code"] == "possible_duplicate" for v in r2["policy_violations"])
+
+    # An unrelated invoice from the same vendor is NOT flagged as a duplicate.
+    other = _clean_invoice("DUP-OTHER", 175.0)
+    other.update(vendor_name="Gamma Freight", vendor_account="GAMMA-CHK-500001",
+                 line_items=["Pallet wrap"], memo="Sundries", issue_date="2026-02-01",
+                 due_date="2026-03-01")
+    r3 = client.post("/invoices", json=other).json()
+    assert not any(v["code"] == "possible_duplicate" for v in r3["policy_violations"])
+
+
 def test_ledger_endpoint_reflects_payments():
     before = client.get("/ledger").json()["balance"]
     client.post("/invoices", json=_clean_invoice("API-LEDGER", 2000.0))

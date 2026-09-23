@@ -291,6 +291,73 @@ custodian/
 
 ---
 
+## Engineering Backlog
+
+Concrete follow-ups on the running slice (see `src/custodian/`).
+
+### 1. LLM risk-scoring: observability & robustness
+
+The LLM→heuristic fallback used to be silent — a missing key, a retired model, and
+a transient 5xx all looked identical ("no LLM configured"), which made a real outage
+invisible. Hardening:
+
+- [x] **Log the failure.** `llm.score_invoice_with_llm` now logs a warning with the
+  exception type/message instead of swallowing it.
+- [x] **Startup diagnosis.** `config.llm_config_warning()` logs, at boot, *why* scoring
+  would use the heuristic (missing/mismatched provider key, or a kill-switch).
+- [x] **Honest rationale.** The heuristic result now distinguishes "no LLM configured"
+  from "LLM configured but the call failed/was unparseable".
+- [x] **Timeout + retry.** Per-call `CUSTODIAN_LLM_TIMEOUT` (30s) and
+  `CUSTODIAN_LLM_MAX_RETRIES` (2) with backoff on transient errors (429/503/network)
+  only — auth/model/parse errors are permanent and not retried.
+- [x] **Fallback metric.** `/metrics` exposes `custodian_llm_scoring_total{outcome=…}`
+  (success / failed / unparseable / not_configured) so degrade is visible in Prometheus.
+- [ ] **Provider-native JSON mode.** Pass `response_format={"type":"json_object"}` for
+  providers that support it (OpenAI/Gemini/Groq) to reduce reliance on regex extraction.
+
+### 2. Tiered risk scoring: local model → API LLM → heuristic
+
+Goal: a fast, offline-capable first tier so scoring works with no network / no cost,
+falling through to the API LLM, then the deterministic heuristic.
+
+- [x] Refactored risk scoring into a **fall-through chain** (`RiskAgent.assess`):
+  local model → API LLM → heuristic, first non-None wins. Source is tagged
+  `local-llm` / `llm` / `heuristic`.
+- [x] `local_llm.score_invoice_locally`: `transformers` + a small instruct model,
+  loaded once and pinned offline (`HF_HUB_OFFLINE=1`), gated behind
+  `CUSTODIAN_LOCAL_MODEL` (unset by default so it never slows the API path).
+  torch/transformers imported lazily; load/gen failures degrade to the next tier.
+- [x] **Model sourcing solved via ModelScope.** HuggingFace is 403-blocked by the
+  corp proxy, but `modelscope.cn` is reachable — and is Qwen's *official* publisher.
+  Downloaded `Qwen/Qwen2.5-0.5B-Instruct` (safetensors) to `data/models/` over HTTP
+  with the corp CA bundle. (`llama-cpp-python`/GGUF ruled out: no py3.13 Windows wheel
+  and no local C toolchain to build it.)
+- [x] Local-scorer outcomes exposed on `/metrics`
+  (`custodian_llm_scoring_total{outcome="local_*"}`).
+- [ ] **Latency reality (measured):** on this CPU box the 0.5B model is ~23s one-time
+  load + **~10s/invoice** — *slower* than the Gemini API. So the local tier is left
+  **disabled by default**; enable it for offline / no-cost / no-network operation, not
+  for speed. Faster options need GPU or a quantized GGUF runtime (blocked here).
+- [ ] Optional: reorder the chain (API → local → heuristic) when both are configured,
+  so latency-sensitive deployments prefer the faster API and fall back to local offline.
+
+### 3. Fraud-detection features (building 1-by-1)
+
+- [x] **Vendor bank-account-change detection (BEC vector).** When a vendor has
+  been paid before but the invoice's payee account differs from every account
+  seen previously, the Policy layer raises a `vendor_account_changed` **flag** →
+  routes to human review with a "verify with the vendor" message (not an
+  auto-reject: legit bank-detail changes happen). Wired through `PolicyEngine.
+  evaluate`, `Custodian.process`/`process_many` (in-batch detection too), a shared
+  `_run_pipeline` helper in the API, and `SqliteStore.known_vendor_accounts`.
+  Surfaces automatically in the invoice detail + Review Queue. Tests added.
+  - [ ] Refinement: base "known accounts" on *trusted* (paid/approved) invoices
+    only, so a rejected fraudulent account never becomes the baseline; and expose
+    a vendor master (name → accounts, first/last seen) as a first-class table + view.
+- [ ] Semantic / near-duplicate detection (embeddings; good use of the local model).
+- [ ] Reviewer feedback loop → adaptive thresholds.
+- [ ] Segregation of duties / maker-checker (submitter ≠ approver, tiered approvals).
+
 ## License
 
 Add your chosen license here (e.g. MIT, Apache-2.0).
