@@ -1,0 +1,13 @@
+{
+  "invoice_id": "INV-005",
+  "vendor_name": "Mohalkar enterprises",
+  "vendor_account": "MOHALAR-CHK-007",
+  "amount": 12000.0,
+  "currency": "INR",
+  "issue_date": "2026-07-20",
+  "due_date": "2026-07-05",
+  "line_items": [
+    "Software Solutions (September) — supervisor pooja@mohalkarenterprises.in"
+  ],
+  "memo": "Software products contract. Billing: billing@mohalkarenterprises.in, +91 87644 43210."
+}

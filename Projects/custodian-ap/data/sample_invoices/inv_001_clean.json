@@ -2,10 +2,14 @@
   "invoice_id": "INV-001",
   "vendor_name": "Acme Office Supplies",
   "vendor_account": "ACME-CHK-889201",
-  "amount": 1240.50,
+  "amount": 1240.5,
   "currency": "INR",
   "issue_date": "2026-08-10",
   "due_date": "2026-09-10",
-  "line_items": ["Printer paper (20 boxes)", "Ink cartridges (12)", "Stationery set — reorder: supplies@acme-office.com"],
+  "line_items": [
+    "Printer paper (20 boxes)",
+    "Ink cartridges (12)",
+    "Stationery set — reorder: supplies@acme-office.com"
+  ],
   "memo": "Monthly office supply order, PO-5521. Queries: ap@acme-office.com or +91 98765 43210."
 }

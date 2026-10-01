@@ -26,7 +26,7 @@ class IngestAgent:
 
     def from_file(self, path: str | Path) -> Invoice:
         """Load and validate one invoice from a JSON file."""
-        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        data = json.loads(Path(path).read_text(encoding="utf-8"))       
         return self.from_dict(data)
 
     def from_directory(self, directory: str | Path) -> list[Invoice]:
