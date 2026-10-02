@@ -2,7 +2,7 @@
 
 Every external service is optional: leaving its URL/DSN blank selects a local
 fallback (embedded Qdrant, SQLite, in-process cache) so the pipeline runs on a
-laptop with no Docker.
+laptop with no Docker as well.
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     llm_refusal_fallbacks: bool = True
     #: Bounded retry for transient Gemini 429/5xx (flash "high demand" 503s).
     #: 1 disables retrying. Applies to the gemini backend's chat path.
-    llm_max_retries: int = 4
+    llm_max_retries: int = 2
     #: If the primary model still fails with a transient error after retries, try
     #: once on this model. Empty disables it. Point it at the fast model to keep
     #: interactive latency bounded when the main model is being load-shed.

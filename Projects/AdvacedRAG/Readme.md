@@ -523,3 +523,13 @@ citations.
 cd "c:/Users/2327238/Documents/dev/ai/Internal Switch/Projects/AdvacedRAG" && ./.venv/Scripts/python.exe -c "from advanced_rag.config import get_settings as g; s=g(); print('host:',s.api_host,'port:',s.api_port)"
 
 ```
+
+## K8S SRE Uster Interface 
+![K8s SRE UI 1](/k8s_sre_ui_1.png)
+![K8s SRE UI 2](/k8s_sre_ui_2.png)
+
+---
+
+![K8s SRE QUES_2 UI 3](/k8s_sre_2nd_ques_1.png)
+![K8s SRE QUES_2 UI 4](/k8rs_sre_2nd_ques_2.png)
+![K8s SRE QUES_2 UI 4](/k8s_sre_2nd_ques_3.png)

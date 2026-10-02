@@ -26,6 +26,8 @@ This is **not a mocked demo**. It runs a full Docker stack and calls real LLM pr
   - [What You Will Learn](#what-you-will-learn)
   - [Environment caveats](#environment-caveats)
   - [Project Structure](#project-structure)
+  - [Custodian Dashbord](#custodian-dashbord)
+    - [Sample Invoice](#sample-invoice)
 
 ---
 
@@ -383,3 +385,18 @@ BankPayeeAgent/
     ├── test_ocr.py               # OCR text-extraction tests
     └── test_pii_presidio.py      # Presidio backend tests (skip if model absent)
 ```
+
+## Custodian Dashbord 
+
+![custodian dashboard](/dashboard_1.png)
+![custodian review queue](/review_queue.png)
+![custodian ledger](/ledger_with_transactions.png)
+![custodian governance layers](/governance_layers.png)
+![custodian audit](/Audit.png)
+
+---
+
+### Sample Invoice 
+
+![Sample Invoice submission](/submit_invoice.png)
+![Sampled Processed Invoice](/processed_invoice.png)

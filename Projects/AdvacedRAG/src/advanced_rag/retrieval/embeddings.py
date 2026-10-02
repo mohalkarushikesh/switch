@@ -3,6 +3,8 @@
 fastembed runs ONNX models on CPU, so hybrid search and cross-encoder reranking
 need no second API key and no GPU. Models are loaded lazily and cached for the
 process because construction costs a few seconds each.
+
+ONNX : A stadard file format used to represent ML and DL models.
 """
 
 from __future__ import annotations

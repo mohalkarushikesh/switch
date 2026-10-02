@@ -9,7 +9,7 @@ window over sentence boundaries.
 from __future__ import annotations
 
 import hashlib
-import re
+import re                       # regular expression matching operations
 from dataclasses import dataclass
 
 from advanced_rag.models import Chunk

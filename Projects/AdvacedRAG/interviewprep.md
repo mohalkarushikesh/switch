@@ -68,20 +68,20 @@ answer (a cache hit skips retrieval), and a weak lexical rerank score is allowed
 ### Pipeline control flow (the graph)
 
 ```
-guardrail_input ──blocked────────────────────────────────────────────────┐
-      │ ok                                                                 │
-  cache_lookup ──hit──────────────────────────────────────────────────┐   │
-      │ miss                                                           │   │
-    route ──reject──────────────────────────────────────────────┐     │   │
-      ├── vector ─► retrieve ─► grade_context ─┬─ correct ──────►│     │   │
-      │                 ▲                      │                 │     │   │
-      │                 └── rewrite_query ◄────┴─ weak (≤2x)     │     │   │
-      │                                                         ▼     │   │
-      └── sql/both ─► sql_generate ─► sql_approval ⏸ ─► sql_execute   │   │
-                                            │ rejected                │   │
-                                            └──────────────►  generate ◄──┤
-                                                               │  ▲       │
-                                                 self_critique ─┘  │ not   │
+guardrail_input ──blocked    ────────────────────────────────────────────────┐
+      │ ok                                                                   │
+  cache_lookup ──hit ──────────────────────────────────────────────────┐     │
+      │ miss                                                           │     │
+    route ──reject ──────────────────────────────────────────────┐     │     │
+      ├── vector ─► retrieve ─► grade_context ─┬─ correct ──────►│     │     │
+      │                 ▲                      │                 │     │     │
+      │                 └── rewrite_query ◄────┴─ weak (≤2x)     │     │     │
+      │                                                          ▼     │     │
+      └── sql/both ─► sql_generate ─► sql_approval ⏸ ─►  sql_execute  │     │ 
+                                            │ rejected                 │     │
+                                            └──────────────►    generate  ◄──┤
+                                                                │    ▲       │
+                                                 self_critique ─┘    │ not   │
                                                       │ ok      grounded(≤1x)
                                                       ▼
                                               guardrail_output ─► finalize ─► END
