@@ -26,6 +26,15 @@ SPARSE = "sparse"
 
 
 class EmbeddedStoreBusyError(RuntimeError):
+    """
+        API Server running
+            +        
+        Ingestion script running
+        
+    both try to access local Qdrant.
+    shows a clear message.
+    """
+    
     """Another process holds the embedded store's exclusive lock.
 
     Worth its own error: the underlying message is accurate but says nothing about
@@ -45,6 +54,16 @@ class EmbeddedStoreBusyError(RuntimeError):
 
 
 class HybridStore:
+    """
+    This is the main Qdrant manager.
+    
+    Responsibilities:
+        Create collection
+        Store vectors
+        Search vectors
+        Handle local/remote Qdrant
+    """
+    
     """Create, populate and query the hybrid collection."""
 
     def __init__(self, settings: Settings | None = None, embedder: Embedder | None = None) -> None:
@@ -57,7 +76,7 @@ class HybridStore:
     def client(self) -> QdrantClient:
         if self._client is None:
             if self.settings.use_remote_qdrant:
-                logger.info("Connecting to Qdrant at %s", self.settings.qdrant_url)
+                logger.info("Connecting to Qdrant at %s", self.settings.qdrant_url)         # Remote Qdrant
                 self._client = QdrantClient(
                     url=self.settings.qdrant_url,
                     api_key=self.settings.qdrant_api_key or None,
@@ -65,7 +84,7 @@ class HybridStore:
             else:
                 path = self.settings.absolute(self.settings.qdrant_path)
                 path.mkdir(parents=True, exist_ok=True)
-                logger.info("Using embedded Qdrant at %s", path)
+                logger.info("Using embedded Qdrant at %s", path)                            # Local Qdrant
                 try:
                     self._client = QdrantClient(path=str(path))
                 except RuntimeError as exc:
@@ -77,6 +96,13 @@ class HybridStore:
     # ------------------------------------------------------------- collection
 
     def ensure_collection(self, *, recreate: bool = False) -> None:
+        """
+        Creates collection if missing.
+        
+        Collection
+            ├── dense vector - Used for semantic search.
+            └── sparse vector - Used for keyword search.
+        """
         exists = self.client.collection_exists(self.collection)
         if exists and recreate:
             logger.warning("Dropping existing collection %s", self.collection)
@@ -130,6 +156,26 @@ class HybridStore:
     # ---------------------------------------------------------------- writing
 
     def upsert(self, chunks: Sequence[Chunk], batch_size: int = 64) -> int:
+        """
+        Stores chunks in Qdrant.
+        
+        Generate Sparse Embeddings
+        Generate Dense Embeddings
+        
+        build point 
+        
+        PointStruct(
+            id=uuid,
+            vector={
+                dense: [...],
+                sparse: [...]
+            },
+            payload=metadata
+        )
+        
+        store : Chunks become searchable.
+        """
+        
         self.ensure_collection()
         written = 0
         for start in range(0, len(chunks), batch_size):
@@ -152,7 +198,7 @@ class HybridStore:
                         id=_point_id(chunk.id), vector=vector, payload=chunk.payload()
                     )
                 )
-            self.client.upsert(collection_name=self.collection, points=points)
+            self.client.upsert(collection_name=self.collection, points=points)              # store 
             written += len(points)
             logger.info("Indexed %d/%d chunks", written, len(chunks))
         return written
@@ -168,6 +214,13 @@ class HybridStore:
         fusion: str = "weighted",
         doc_type: str | None = None,
     ) -> list[RetrievedChunk]:
+        """
+        Dense Search - Semantic meaning search 
+        Sparse Search - Keyword matching 
+        
+        hybrid search : Uses both 
+        """
+        
         """Retrieve chunks for a query.
 
         mode:   dense | sparse | hybrid
@@ -198,6 +251,16 @@ class HybridStore:
     def _single(
         self, query: str, top_k: int, using: str, query_filter: models.Filter | None
     ) -> list[RetrievedChunk]:
+        """
+        Performs one search.
+        
+        Dense -> vector -> Qdrant search
+        Sparse -> BM25 vector -> Qdrant search 
+        
+        Returns : Retrived chunk with score 
+        """
+        
+        
         vector: Any
         if using == DENSE:
             vector = self.embedder.embed_query(query)
@@ -235,6 +298,15 @@ class HybridStore:
     def _hybrid_rrf(
         self, query: str, top_k: int, query_filter: models.Filter | None
     ) -> list[RetrievedChunk]:
+        """
+        RRF combines rankings.
+        
+        Benefits:
+            Fast
+            Server-side
+            No weights    
+        """
+    
         """Server-side reciprocal rank fusion - one round trip, no tunable weight."""
         response = self.client.query_points(
             collection_name=self.collection,
@@ -249,6 +321,16 @@ class HybridStore:
     def _hybrid_weighted(
         self, query: str, top_k: int, query_filter: models.Filter | None
     ) -> list[RetrievedChunk]:
+        """
+        1. Run Dense search
+        2. Run Sparse search
+        3. Normalize scores 
+        4. Apply weights 
+        5. Merge same chunk 
+        6. sort by score 
+            top chunks returned 
+        """
+        
         """Client-side fusion of min-max normalised dense and sparse scores.
 
         Slightly more work than RRF, but HYBRID_DENSE_WEIGHT becomes a real dial:
@@ -284,6 +366,10 @@ class HybridStore:
 
 
 def _doc_type_filter(doc_type: str | None) -> models.Filter | None:
+    """
+    Filters documents : Based on doc type 
+    """
+    
     if not doc_type:
         return None
     return models.Filter(
@@ -292,11 +378,33 @@ def _doc_type_filter(doc_type: str | None) -> models.Filter | None:
 
 
 def _point_id(chunk_id: str) -> str:
+    """
+    Qdrant requires:
+        Plain Text : UUID
+    
+        py: Converts - chunk_id
+        
+        py: uuid.uuid5(...)
+
+        Plain Text : 2c31a4d4-fc...
+    """
+    
     """Qdrant point IDs must be UUIDs or unsigned ints; derive one deterministically."""
     return str(uuid.uuid5(uuid.NAMESPACE_URL, chunk_id))
 
 
 def _to_retrieved(point: Any, score: float) -> RetrievedChunk:
+    """
+    Converts raw Qdrant result into: RetrievedChunk
+    
+    Contains:{
+            chunk,
+            retrieval_score
+        }
+    
+    This is what the RAG pipeline uses.
+    """
+    
     payload = dict(point.payload or {})
     known = {"chunk_id", "text", "source", "title", "section", "doc_type"}
     chunk = Chunk(
@@ -315,7 +423,48 @@ _store: HybridStore | None = None
 
 
 def get_store() -> HybridStore:
+    """
+    Singleton pattern.
+        get_store()
+    
+    First call:
+        HybridStore()
+    
+    Next calls:
+        same object reused
+        
+    avoids multiple connections.
+    """
+    
     global _store
     if _store is None:
         _store = HybridStore()
     return _store
+
+
+"""
+Documents
+    ↓
+Chunking
+    ↓
+Embeddings (Dense + Sparse)
+    ↓
+Qdrant Storage
+    ↓
+User Query
+    ↓
+Dense Search + Sparse Search
+    ↓
+Fusion (Weighted / RRF)
+    ↓
+Top Relevant Chunks
+"""
+
+
+"""
+This module implements a Hybrid Vector Store using Qdrant. During ingestion, each chunk is 
+converted into both dense embeddings for semantic search and sparse BM25 vectors for keyword search, 
+then stored in a single collection. During retrieval, the query can run dense, sparse, or hybrid search. 
+Hybrid mode combines semantic and lexical relevance using either Reciprocal Rank Fusion (RRF) or weighted score fusion, 
+which improves retrieval accuracy for RAG systems by handling both paraphrased queries and exact error messages.
+"""

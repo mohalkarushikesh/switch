@@ -25,6 +25,15 @@ class Section:
 
 
 def split_sections(markdown: str) -> list[Section]:
+    """
+    Reads the markdown document.
+    Finds all headings (#, ##, ###, etc.).
+    Splits the document into sections.
+    Each section contains:
+        title = heading text
+        body = content under that heading
+    """
+    
     """Break a document at its headings, keeping each heading with its body."""
     matches = list(_HEADING.finditer(markdown))
     if not matches:
@@ -44,6 +53,12 @@ def split_sections(markdown: str) -> list[Section]:
 
 
 def window(text: str, size: int, overlap: int) -> list[str]:
+    """
+    Splits large text into sentences.
+    Packs sentences into chunks of maximum size characters.
+    Keeps some content (overlap) from the previous chunk in the next chunk for context.
+    """
+    
     """Pack sentences into <=`size` character windows that overlap by `overlap`."""
     pieces = [p.strip() for p in _SENTENCE_END.split(text) if p.strip()]
     if not pieces:
@@ -81,6 +96,23 @@ def chunk_document(
     chunk_size: int = 900,
     chunk_overlap: int = 150,
 ) -> list[Chunk]:
+    """
+    Get section title and body.
+    Add title at the beginning of every chunk:
+        Plain Text
+            Pod Troubleshooting
+            Check logs...
+    If section is too large, use window() to split it.
+    Create a Chunk object with:
+        unique id
+        chunk text
+        source file
+        title
+        section name
+        metadata
+    Add chunk to the final list.
+    """
+    
     """Turn one markdown document into retrievable chunks."""
     chunks: list[Chunk] = []
     for section in split_sections(text):
@@ -106,6 +138,35 @@ def chunk_document(
 
 
 def _chunk_id(source: str, section: str, body: str) -> str:
+    """
+    Creates a unique ID using SHA-256 hash.
+    
+    This ensures:
+        Same content → same ID
+        Modified content → new ID
+    """
+    
     """Content-addressed id, so re-ingesting unchanged docs overwrites in place."""
     digest = hashlib.sha256((source + "|" + section + "|" + body).encode()).hexdigest()
     return source + "#" + digest[:16]
+
+
+
+"""
+Markdown Document
+        ↓
+split_sections()
+        ↓
+Section 1, Section 2, ...
+        ↓
+window() (if section is large)
+        ↓
+Chunk Objects
+        ↓
+Unique Hash ID
+        ↓
+Stored in Vector DB
+
+
+    - So when retrieved, the LLM gets context + citation source, making answers like: From "Pod Troubleshooting", check container logs using kubectl logs.
+"""
