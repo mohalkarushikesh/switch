@@ -524,6 +524,14 @@ cd "c:/Users/2327238/Documents/dev/ai/Internal Switch/Projects/AdvacedRAG" && ./
 
 ```
 
+## Sample Questions: 
+
+1. How many sev1 incidents occurred?
+2. How many failed deployments?
+3. Show unhealthy nodes
+
+
+
 ## K8S SRE Uster Interface 
 ![K8s SRE UI 1](/k8s_sre_ui_1.png)
 ![K8s SRE UI 2](/k8s_sre_ui_2.png)

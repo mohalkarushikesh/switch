@@ -1,9 +1,16 @@
-"""The operations database: schema, deterministic seed data, and safe execution.
+"""This file creates and manages the Operations Database used by the Text-to-SQL component.
+It:
+    ✅ Creates tables (schema)
+    ✅ Seeds sample data
+    ✅ Supports PostgreSQL and SQLite
+    ✅ Executes SQL safely
+    ✅ Provides metadata to the LLM
+
+## The operations database: schema, deterministic seed data, and safe execution.
 
 Runs on PostgreSQL when POSTGRES_DSN is set and on SQLite otherwise, so Text2SQL
 is exercisable without Docker. The generated SQL is dialect-sensitive, which is
-why get_schema_prompt() names the dialect explicitly.
-"""
+why get_schema_prompt() names the dialect explicitly."""
 
 from __future__ import annotations
 
@@ -24,11 +31,18 @@ logger = logging.getLogger(__name__)
 # Python 3.12 deprecated sqlite3's implicit date adapter. Registering an explicit
 # one keeps DATE columns as ISO strings, which is also what the generated SQL's
 # date comparisons expect.
-sqlite3.register_adapter(date, lambda value: value.isoformat())
 
-DDL = [
-    """
-    CREATE TABLE IF NOT EXISTS clusters (
+                                                                            # DDL: Convert Python dates into: 2026-08-27; before storing in SQLite.
+                                                                            # DDL-  Contains SQL commands to create tables. 
+                                                                            # Table 1: clusters
+                                                                            # Table 2: nodes
+                                                                            # Table 3: deployments
+                                                                            # Table 4: incidents
+                                                                            # Table 5: slo_breaches
+sqlite3.register_adapter(date, lambda value: value.isoformat())                        
+DDL = [                                                                                 
+    """                                                                                 
+    CREATE TABLE IF NOT EXISTS clusters (                                               
         id INTEGER PRIMARY KEY,
         name VARCHAR(64) NOT NULL,
         region VARCHAR(32) NOT NULL,
@@ -94,6 +108,10 @@ DDL = [
 
 #: Column comments folded into the schema prompt - the model guesses far less
 #: about semantics when the units and enum values are stated.
+
+                                                                # COLUMN_NOTES: Metadata for LLM.
+                                                                # Without notes:LLM may guess meanings
+                                                                # With notes:LLM generates better SQL
 COLUMN_NOTES = {
     "clusters.environment": "one of production, staging, development",
     "nodes.status": "one of Ready, NotReady, SchedulingDisabled",
@@ -134,20 +152,50 @@ class QueryResult:
 _engine: Engine | None = None
 
 
-def get_engine(settings: Settings | None = None) -> Engine:
+def get_engine(settings: Settings | None = None) -> Engine:             # Database Setup
     global _engine
     if _engine is None:
         settings = settings or get_settings()
         url = settings.sql_url
         logger.info("Operations database: %s", url.split("@")[-1])
-        _engine = create_engine(url, future=True, pool_pre_ping=True)
-    return _engine
+        _engine = create_engine(url, future=True, pool_pre_ping=True)   # Create a database connection.
+    return _engine                                                      # POSTGRES_DSN available → PostgreSQL; Otherwise → SQLite
 
+"""
+    Config
+    ↓
+    Database URL
+    ↓
+    SQLAlchemy Engine           create_engine()
+     `` 
+    
+    In SQLAlchemy, the Engine is the starting point and central gateway for database operations. 
+    
+    It manages two fundamental low-level components: a Connection Pool (which holds and reuses active database connections) and 
+    a Dialect (which translates SQLAlchemy commands into the specific SQL variant required by target databases like PostgreSQL, MySQL, or SQLite).
 
+    The Engine is typically created once as a global factory object at the module scope of your application.
+"""
 # ------------------------------------------------------------------- seeding
 
 
-def seed_database(settings: Settings | None = None) -> int:
+def seed_database(settings: Settings | None = None) -> int:                     # Main database initialization.
+    """
+        Create tables
+        ↓
+        Delete old data
+        ↓
+        Insert clusters
+        ↓
+        Insert nodes
+        ↓
+        Insert deployments
+        ↓
+        Insert incidents
+        ↓
+        Insert SLO breaches
+        ``
+    """
     """Create the schema and fill it with deterministic sample data."""
     settings = settings or get_settings()
     engine = get_engine(settings)
@@ -172,8 +220,8 @@ def seed_database(settings: Settings | None = None) -> int:
     return total
 
 
-def _clusters() -> list[dict[str, Any]]:
-    rows = [
+def _clusters() -> list[dict[str, Any]]:                                    # Creates cluster records.
+    rows = [    
         ("prod-eu-west-1", "eu-west-1", "production", "1.29.6", 48, date(2023, 4, 11)),
         ("prod-us-east-1", "us-east-1", "production", "1.29.6", 64, date(2023, 2, 2)),
         ("prod-ap-south-1", "ap-south-1", "production", "1.28.11", 24, date(2024, 1, 18)),
@@ -194,7 +242,8 @@ def _clusters() -> list[dict[str, Any]]:
     ]
 
 
-def _nodes(clusters: list[dict[str, Any]], rng: random.Random) -> list[dict[str, Any]]:
+def _nodes(clusters: list[dict[str, Any]], rng: random.Random) -> list[dict[str, Any]]:             # Creates node data
+                                                                                                    # For evert cluster: Creates sample nodes.
     shapes = [("m6i.2xlarge", 8, 32), ("m6i.4xlarge", 16, 64), ("c6i.2xlarge", 8, 16)]
     rows: list[dict[str, Any]] = []
     node_id = 1
@@ -223,7 +272,7 @@ def _nodes(clusters: list[dict[str, Any]], rng: random.Random) -> list[dict[str,
     return rows
 
 
-def _deployments(clusters: list[dict[str, Any]], rng: random.Random) -> list[dict[str, Any]]:
+def _deployments(clusters: list[dict[str, Any]], rng: random.Random) -> list[dict[str, Any]]:       # Creates deployment history; Randomly creates; ex row, failure probability, rollback probability, used for 
     engineers = ["a.patel", "j.novak", "m.okafor", "s.lindqvist", "r.moreau", "ci-bot"]
     rows: list[dict[str, Any]] = []
     deployment_id = 1
@@ -251,7 +300,7 @@ def _deployments(clusters: list[dict[str, Any]], rng: random.Random) -> list[dic
     return rows
 
 
-def _incidents(clusters: list[dict[str, Any]], rng: random.Random) -> list[dict[str, Any]]:
+def _incidents(clusters: list[dict[str, Any]], rng: random.Random) -> list[dict[str, Any]]:            # Creates outage data: Creates incidents; severity; Root causes, Ex, Used for 
     rows: list[dict[str, Any]] = []
     incident_id = 1
     start = date(2026, 5, 1)
@@ -281,7 +330,7 @@ def _incidents(clusters: list[dict[str, Any]], rng: random.Random) -> list[dict[
     return rows
 
 
-def _slo_breaches(clusters: list[dict[str, Any]], rng: random.Random) -> list[dict[str, Any]]:
+def _slo_breaches(clusters: list[dict[str, Any]], rng: random.Random) -> list[dict[str, Any]]:      # Creates SLO violation records: Monitors, example, used for 
     slos = [("availability", 99.90), ("latency_p99_under_300ms", 99.00), ("error_rate", 99.95)]
     rows: list[dict[str, Any]] = []
     breach_id = 1
@@ -305,7 +354,7 @@ def _slo_breaches(clusters: list[dict[str, Any]], rng: random.Random) -> list[di
     return rows
 
 
-def _insert(conn, table: str, rows: list[dict[str, Any]]) -> int:
+def _insert(conn, table: str, rows: list[dict[str, Any]]) -> int:               # Generic insert helper: converts, into and bulk inserts rows, 
     if not rows:
         return 0
     columns = list(rows[0].keys())
@@ -314,4 +363,36 @@ def _insert(conn, table: str, rows: list[dict[str, Any]]) -> int:
         f"VALUES ({', '.join(':' + c for c in columns)})"
     )
     conn.execute(statement, rows)
-    return len(rows)
+    return len(rows)                                                           # return numbers of records inserted 
+
+
+"""
+User Question
+      ↓
+Text2SQL Generator
+      ↓
+SELECT COUNT(*)
+FROM incidents
+WHERE severity='sev1'
+      ↓
+SQL Execute
+      ↓
+QueryResult
+      ↓
+LLM Generates Answer
+"""
+
+"""
+clusters
+    │
+    ├── nodes
+    │
+    ├── deployments
+    │
+    ├── incidents
+    │
+    └── slo_breaches
+    
+This file builds a deterministic Kubernetes operations database containing clusters, nodes, deployments, incidents, and SLO breaches, 
+which the Text-to-SQL agent queries using AI-generated SQL to answer operational questions.
+"""

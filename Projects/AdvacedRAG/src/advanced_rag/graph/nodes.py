@@ -1,9 +1,39 @@
-"""Graph nodes.
+
+"""User Question
+     ↓
+Input Guardrails
+     ↓
+Cache Check
+     ↓
+Routing (Vector / SQL / Both)
+     ↓
+Retrieve Documents
+     ↓
+Grade Context (CRAG)
+     ↓
+Rewrite Query (if needed)
+     ↓
+Generate Answer
+     ↓
+Self Critique (Self-RAG)
+     ↓
+SQL Approval & Execute (if SQL)
+     ↓
+Output Guardrails
+     ↓
+Cache Result
+     ↓
+Final Answer
+
+
+Self-RAG (Self-Reflective Retrieval-Augmented Generation) is an advanced AI framework where a large language model (LLM) 
+dynamically decides when to fetch external data and critically evaluates its own text using special "reflection tokens".
+
+## Graph nodes.
 
 Each node is a plain function of state -> state patch, with no knowledge of the
 edges around it. That keeps every stage testable in isolation and lets the
-builder rewire the pipeline from feature flags without touching this file.
-"""
+builder rewire the pipeline from feature flags without touching this file."""
 
 from __future__ import annotations
 
@@ -69,7 +99,8 @@ class Critique(BaseModel):
 # ----------------------------------------------------------------------- nodes
 
 
-def guardrail_input_node(state: RagState) -> dict:
+def guardrail_input_node(state: RagState) -> dict:                      # Validate user input before doing anything expensive.
+                                                                        # Checks: Harmful content, Prompt injection, Unsupported requests
     """Layers 1-6: everything that runs before a retrieval token is spent."""
     trace: list = []
     with timed(trace, "guardrail_input") as step:
@@ -85,7 +116,8 @@ def guardrail_input_node(state: RagState) -> dict:
     }
 
 
-def cache_lookup_node(state: RagState) -> dict:
+def cache_lookup_node(state: RagState) -> dict:                         # Check whether the answer already exists.
+                                                                        # Looks in: Exact cache, Semantic cache; if found pipeline can stop early
     """Exact then semantic cache. A hit short-circuits the whole pipeline."""
     trace: list = []
     with timed(trace, "cache_lookup") as step:
@@ -100,7 +132,7 @@ def cache_lookup_node(state: RagState) -> dict:
     if payload is None:
         return {"cached": False, "cache_kind": "none", "trace": trace}
     return {
-        "cached": True,
+        "cached": True,                                                 # if found cache=True, "answer": cached_answer
         "cache_kind": kind,
         "answer": payload.get("answer", ""),
         "context": payload.get("context", ""),
@@ -113,7 +145,10 @@ def cache_lookup_node(state: RagState) -> dict:
     }
 
 
-def route_node(state: RagState) -> dict:
+def route_node(state: RagState) -> dict:                                # Decide where data should come from.
+                                                                        # Possible routes: VECTOR, SQL, BOTH, REJECT 
+                                                                        # Uses LLM router: RouteDecision()
+
     """Decide whether the question needs documents, the database, or both."""
     settings = get_settings()
     trace: list = []
@@ -150,8 +185,22 @@ def route_node(state: RagState) -> dict:
     return patch
 
 
-def retrieve_node(state: RagState) -> dict:
-    """HyDE -> hybrid search -> cross-encoder rerank."""
+def retrieve_node(state: RagState) -> dict:                             # Fetch relevant documents.
+    """HyDE -> hybrid search -> cross-encoder rerank."""                # <- Uses 
+    """
+    Query
+        ↓
+        HyDE Query
+        ↓
+        Vector Search
+        ↓
+        BM25 Search
+        ↓
+        Merge Results
+        ↓
+    Cross Encoder Rerank    
+    """
+    
     settings = get_settings()
     retriever = get_retriever()
     trace: list = []
@@ -172,7 +221,7 @@ def retrieve_node(state: RagState) -> dict:
                 f"top={result.top_score:.3f}"
             )
 
-    return {
+    return {                                                            # Output: chunks, context, hyde_document
         "chunks": chunks,
         "context": format_context(chunks),
         "hyde_document": hyde_doc,
@@ -181,7 +230,7 @@ def retrieve_node(state: RagState) -> dict:
     }
 
 
-def grade_node(state: RagState) -> dict:
+def grade_node(state: RagState) -> dict:                                # CRAG validation: CORRECT, AMBIGUOUS, INCORRECT
     """CRAG: judge the retrieved context before spending a generation on it."""
     settings = get_settings()
     trace: list = []
@@ -239,7 +288,7 @@ def grade_node(state: RagState) -> dict:
     return {"verdict": verdict, "verdict_reason": reason, "trace": trace}
 
 
-def rewrite_node(state: RagState) -> dict:
+def rewrite_node(state: RagState) -> dict:                         # Correct bad retrieval.
     """CRAG's corrective step: propose better queries after a weak retrieval."""
     trace: list = []
     with timed(trace, "rewrite_query") as step:
@@ -248,7 +297,7 @@ def rewrite_node(state: RagState) -> dict:
     return {"rewrites": rewrites, "trace": trace}
 
 
-def generate_node(state: RagState) -> dict:
+def generate_node(state: RagState) -> dict:                        # Create final answer.
     """Compose the answer from document context and any SQL results."""
     trace: list = []
     settings = get_settings()
@@ -334,7 +383,11 @@ def generate_node(state: RagState) -> dict:
     }
 
 
-def critique_node(state: RagState) -> dict:
+def critique_node(state: RagState) -> dict:                        # Self-RAG verification.
+                                                                   # Grounded?
+                                                                   # Answers Question?
+                                                                   # Citations Present?
+                                                                   # if failed critique.fix ; and regerate answer 
     """Self-RAG: grade the draft against its own context before returning it."""
     trace: list = []
     with timed(trace, "self_critique") as step:
@@ -370,8 +423,8 @@ def critique_node(state: RagState) -> dict:
         }
 
 
-def sql_generate_node(state: RagState) -> dict:
-    """Draft a read-only query. Nothing runs yet."""
+def sql_generate_node(state: RagState) -> dict:                    # Convert question to SQL.
+    """Draft a read-only query. Nothing runs yet."""               # 
     trace: list = []
     with timed(trace, "sql_generate") as step:
         proposal = get_sql_generator().generate(state["question"])
@@ -379,9 +432,9 @@ def sql_generate_node(state: RagState) -> dict:
     return {"sql": proposal, "trace": trace}
 
 
-def sql_approval_node(state: RagState) -> dict:
-    """Pause the graph and hand the query to a human.
-
+def sql_approval_node(state: RagState) -> dict:                     # Human-in-the-loop approval.
+    """Pause the graph and hand the query to a human.               # Approve / Reject
+                                                                    # Protects databases.
     `interrupt()` persists the state through the checkpointer and raises out of
     the run. Resuming with Command(resume={"approved": bool}) continues from
     exactly here, so no earlier work is repeated.
@@ -412,9 +465,9 @@ def sql_approval_node(state: RagState) -> dict:
     }
 
 
-def sql_execute_node(state: RagState) -> dict:
-    """Run the approved query and render its rows for the answer prompt."""
-    trace: list = []
+def sql_execute_node(state: RagState) -> dict:                               #  Run approved SQL.
+    """Run the approved query and render its rows for the answer prompt."""  # returns rows, columns and row_count 
+    trace: list = []                                                         # Converts rows into text for LLM.
     proposal = state.get("sql")
     with timed(trace, "sql_execute") as step:
         if proposal is None or not proposal.approved or not proposal.sql:
@@ -446,7 +499,13 @@ def sql_execute_node(state: RagState) -> dict:
     }
 
 
-def guardrail_output_node(state: RagState) -> dict:
+def guardrail_output_node(state: RagState) -> dict:                        # Validate generated answer.
+                                                                           # check:
+                                                                            # Hallucinations
+                                                                            # Unsafe output
+                                                                            # Policy violations
+                                                                            # Grounding 
+                                                                
     """Layers 7-9, applied to the finished answer."""
     trace: list = []
     # A failed generation returns a fixed system notice ("the model is
@@ -476,8 +535,8 @@ def guardrail_output_node(state: RagState) -> dict:
     return patch
 
 
-def finalize_node(state: RagState) -> dict:
-    """Store the answer in the cache. Never cache a blocked or failed run."""
+def finalize_node(state: RagState) -> dict:                                     # Store answer in cache.
+    """Store the answer in the cache. Never cache a blocked or failed run."""   # 
     trace: list = []
     with timed(trace, "finalize") as step:
         if state.get("blocked") or state.get("cached") or not state.get("answer"):
@@ -509,7 +568,7 @@ def finalize_node(state: RagState) -> dict:
     return {"trace": trace}
 
 
-def citations_from(state: RagState) -> list[Citation]:
+def citations_from(state: RagState) -> list[Citation]:                # Create source references.
     """Citations for the response.
 
     Prefers ones already in state - a cache hit restores them there without ever
@@ -528,3 +587,21 @@ def citations_from(state: RagState) -> list[Citation]:
         for hit in state.get("chunks") or []
     ]
 
+
+"""
+Question → Guardrails → Cache → Route → Retrieve → Grade(CRAG) → Rewrite(if needed) → Generate → Self-Critique(Self-RAG) → SQL Approval/Execution(if needed) → Output Guardrails → Cache → Answer
+
+✅ Guardrails
+✅ Caching (Exact + Semantic)
+✅ Hybrid Search
+✅ HyDE
+✅ Cross-Encoder Reranking
+✅ CRAG (Context Grading + Rewrite)
+✅ Self-RAG (Self Critique)                 # special reflective token
+✅ Text-to-SQL
+✅ Human Approval for SQL
+✅ Output Validation
+✅ Citations
+✅ Observability/Tracing
+✅ Offline Extractive Mode (Without LLM)
+"""

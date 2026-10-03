@@ -215,6 +215,9 @@ class HybridStore:
         doc_type: str | None = None,
     ) -> list[RetrievedChunk]:
         """
+        Main retrival function 
+        
+        Supports:
         Dense Search - Semantic meaning search 
         Sparse Search - Keyword matching 
         
@@ -299,6 +302,9 @@ class HybridStore:
         self, query: str, top_k: int, query_filter: models.Filter | None
     ) -> list[RetrievedChunk]:
         """
+        Dense results 
+        Sparse results 
+        
         RRF combines rankings.
         
         Benefits:

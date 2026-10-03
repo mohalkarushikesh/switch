@@ -1,11 +1,18 @@
-"""Local embedding and reranking models.
+"""This module provides embedding (vector generation) and reranking (relevance scoring) for an Advanced RAG system.
+
+It supports 3 retrieval modes:
+
+    Keyword Mode → Local BM25 only
+    FastEmbed Mode → Dense + Sparse embeddings using ONNX models
+    Gemini Mode → Dense embeddings from Gemini API + Local BM25
+
+# Local embedding and reranking models.
 
 fastembed runs ONNX models on CPU, so hybrid search and cross-encoder reranking
 need no second API key and no GPU. Models are loaded lazily and cached for the
 process because construction costs a few seconds each.
 
-ONNX : A stadard file format used to represent ML and DL models.
-"""
+ONNX : A stadard file format used to represent ML and DL models."""
 
 from __future__ import annotations
 
@@ -25,7 +32,7 @@ LOCAL_SPARSE_ALIASES = frozenset({"local-bm25", "local", "bm25-local", "none"})
 LOCAL_RERANK_ALIASES = frozenset({"local-lexical", "local", "lexical", "none"})
 
 
-class SparseVector:
+class SparseVector:                                 # Stores sparse vectors in Qdrant format: index/value - Used for: BM25 retirieval, Sparse embeddings 
     """Index/value pair as Qdrant expects it for sparse vectors."""
 
     __slots__ = ("indices", "values")
@@ -35,7 +42,7 @@ class SparseVector:
         self.values = [float(v) for v in values]
 
 
-class ModelUnavailableError(RuntimeError):
+class ModelUnavailableError(RuntimeError):                  
     """fastembed could not obtain a model, with the ways out spelled out."""
 
     def __init__(self, model_name: str, cause: Exception) -> None:
@@ -51,7 +58,9 @@ class ModelUnavailableError(RuntimeError):
         )
 
 
-class KeywordEmbedder:
+class KeywordEmbedder:                              # Used when RETRIEVAL_BACKEND=keyword
+                                                    # Only supports BM25, does not supports Dense embeddings                       
+                                                    # Text -> BM25 -> Sparse vector -> search 
     """Sparse-only encoder using the local BM25 implementation.
 
     Drop-in for `Embedder` minus the dense arm, so the store, retriever and graph
@@ -79,7 +88,7 @@ class KeywordEmbedder:
         return SparseVector(*bm25.encode_query(text))
 
 
-class DenseUnavailableError(RuntimeError):
+class DenseUnavailableError(RuntimeError):            # Thrown when someone tries: embed_query(), while using BM25-only mode.
     def __init__(self) -> None:
         super().__init__(
             "The keyword retrieval backend has no dense arm. Set "
@@ -87,7 +96,8 @@ class DenseUnavailableError(RuntimeError):
         )
 
 
-class Embedder:
+class Embedder:                                        # Main embedding engine.
+                                                       # which runs:ONNX models -> CPU (No GPU needed)
     """Dense + sparse text encoders backed by fastembed.
 
     The two arms degrade independently. That matters on a network that blocks
@@ -125,7 +135,9 @@ class Embedder:
     # ---------------------------------------------------------------- loading
 
     @property
-    def dense(self):
+    def dense(self):                            # Loads: TextEmbedding, ex: BAAI/bge-small-en
+                                                # Flow : Question -> Dense Model -> 768-dim vector 
+                                                # Methods: embed_query(), embed_documents()
         if self._dense is None:
             from fastembed import TextEmbedding
 
@@ -136,7 +148,10 @@ class Embedder:
                 raise ModelUnavailableError(self.dense_model_name, exc) from exc
         return self._dense
 
-    def _sparse_impl(self):
+    def _sparse_impl(self):                      # Loads: SparseTextEmbedding, ex: Qdrant/bm42
+                                                 # if loading fails:
+                                                 # HF blocked -> Facllback -> Local BM25 
+                                                 # This is why _sparse_impl() exists.
         """The fastembed sparse encoder, or None if the local BM25 is standing in."""
         if self._sparse_provider is None:
             if self.configured_sparse_model in LOCAL_SPARSE_ALIASES:
@@ -203,7 +218,9 @@ class Embedder:
         return SparseVector(embedding.indices, embedding.values)
 
 
-class GeminiEmbedder:
+class GeminiEmbedder:                            # Used when, RETRIEVAL_BACKEND=gemini
+                                                 # Document -> Gemini Embedding API -> Dense Vector + Local BM25 -> Sparse Vector
+                                                 # So you get : Hybrid retrieval(Dense + Sparse) without hugging face 
     """Dense embeddings via the Gemini API, sparse via the local BM25 impl.
 
     Same surface as `Embedder`, so the store, retriever and graph branch on
@@ -220,9 +237,9 @@ class GeminiEmbedder:
     #: Documents and queries embed into the same space but with side-specific
     #: optimisation, which measurably helps asymmetric (question -> passage)
     #: retrieval - exactly the HyDE gap this project already works around.
-    _DOC_TASK = "RETRIEVAL_DOCUMENT"
-    _QUERY_TASK = "RETRIEVAL_QUERY"
-
+    _DOC_TASK = "RETRIEVAL_DOCUMENT"             # Used for indexing documents.
+    _QUERY_TASK = "RETRIEVAL_QUERY"              # Used for user questions.
+                                                 # This improves the Questions <-> document maching 
     def __init__(self, model: str, dim: int, api_key: str | None = None) -> None:
         self.dense_model_name = model
         self._dim = dim
@@ -289,7 +306,9 @@ def _l2_normalize(vector: list[float]) -> list[float]:
     return [v / norm for v in vector]
 
 
-def _with_retry(call, *, attempts: int = 3, base_delay: float = 2.0):
+def _with_retry(call, *, attempts: int = 3, base_delay: float = 2.0):             # Retries Gemini API if:
+                                                                                  # 403 -> RESOURCE_EXHAUSTED
+                                                                                  # 503 -> UNAVAILABLE 
     """Retry a Gemini call through transient rate-limit / unavailability errors.
 
     Scoped to the embeddings path for now; the broader client retry is P1. Only
@@ -316,7 +335,8 @@ def _with_retry(call, *, attempts: int = 3, base_delay: float = 2.0):
             time.sleep(delay)
 
 
-class LexicalReranker:
+class LexicalReranker:                              # Used when: RERANK_MODEL=local
+                                                    # Query -> BM25 coverage check -> Score 
     """Fallback "reranker" for the keyword backend.
 
     Not a cross-encoder and no substitute for one - it scores query-term coverage,
@@ -334,10 +354,12 @@ class LexicalReranker:
         return [(value - 0.5) * 12.0 for value in coverage]
 
 
-class Reranker:
+class Reranker:                                     # After retrieval: Needs better re-ranking -> This is reranking
     """Cross-encoder reranker: scores (query, passage) pairs jointly."""
 
-    is_cross_encoder = True
+    is_cross_encoder = True                         # cross endcoder reads : (Query + Document)
+                                                    # Question + Passage -> Cross encoder -> Relevance score 
+                                                    # More accurate than BM25.
 
     def __init__(self, model_name: str, cache_dir: str | None = None) -> None:
         self.model_name = model_name
@@ -347,7 +369,7 @@ class Reranker:
     @property
     def model(self):
         if self._model is None:
-            from fastembed.rerank.cross_encoder import TextCrossEncoder
+            from fastembed.rerank.cross_encoder import TextCrossEncoder     
 
             logger.info("Loading reranker %s", self.model_name)
             kwargs = {"cache_dir": self.cache_dir} if self.cache_dir else {}
@@ -371,6 +393,26 @@ relative to the others. Return a relevance score for every passage index."""
 
 
 class GeminiReranker:
+    """#
+    Question
+    ↓
+
+    Passage 1
+    Passage 2
+    Passage 3
+
+    ↓
+
+    Gemini LLM
+    ↓
+    Score each passage
+    ↓
+    Reorder
+    
+    Then converted to logits.
+    """
+    
+    
     """LLM-scored reranker: one structured call rates every candidate 0..1.
 
     Not a bi-directional cross-encoder, but authoritative in the sense the rest
@@ -441,7 +483,9 @@ class GeminiReranker:
         return [(by_index.get(i, 0.0) - 0.5) * 12.0 for i in range(len(docs))]
 
 
-def normalize_scores(scores: Iterable[float]) -> list[float]:
+def normalize_scores(scores: Iterable[float]) -> list[float]:       # Converts scores into Range 
+                                                                    # Useful because:
+                                                                    # BM25, Cosine, CrossEncoder -> all produce different scales.
     """Min-max normalise to [0, 1] so heterogeneous scores can be compared.
 
     Cross-encoder logits, cosine similarity and BM25 live on different scales;
@@ -456,7 +500,7 @@ def normalize_scores(scores: Iterable[float]) -> list[float]:
     return [(v - low) / (high - low) for v in values]
 
 
-def sigmoid(x: float) -> float:
+def sigmoid(x: float) -> float:                                     # Converts logits into plain text 0.997
     """Map a cross-encoder logit to a calibrated-ish 0..1 relevance."""
     import math
 
@@ -473,7 +517,7 @@ def _cache_dir() -> str | None:
     return str(settings.absolute(settings.model_cache_dir))
 
 
-def _prepare_downloads() -> None:
+def _prepare_downloads() -> None:                               # Before downloading models:
     """Everything fastembed needs before it touches the network.
 
     Deliberately here rather than in each entry point. Requiring every CLI, the
@@ -487,19 +531,38 @@ def _prepare_downloads() -> None:
 
     from advanced_rag.certs import enable_system_trust_store
 
-    enable_system_trust_store()
+    enable_system_trust_store()                                 # Fixes: CERTIFICATE_VERIFY_FAILED
 
     # pydantic-settings loads .env into a Settings object, not into os.environ, so
     # a token configured there is invisible to huggingface_hub without this. An
     # already-set HF_TOKEN wins, so the shell can override .env.
-    token = get_settings().hf_token
+    token = get_settings().hf_token                         
     if token and not os.environ.get("HF_TOKEN"):
-        os.environ["HF_TOKEN"] = token
+        os.environ["HF_TOKEN"] = token                         # Set HuggingFace Token from .env
         logger.info("Using the configured Hugging Face token for model downloads")
 
 
 @lru_cache
 def get_embedder() -> Embedder | KeywordEmbedder | GeminiEmbedder:
+    """#
+    Most important factory function.
+                        get_embedder()
+                           |
+          ----------------------------------
+          |                |              |
+      keyword          gemini          auto
+          |                |              |
+      BM25 only      Gemini+BM25      FastEmbed
+                                           |
+                                    Model Load ?
+                                      /      \
+                                    Yes      No
+                                     |        |
+                               FastEmbed   Keyword
+                               
+    returns: KeywordEmbedder, GeminiEmbedder, Embedder  
+    """
+    
     """Resolve the retrieval backend, probing fastembed when set to "auto"."""
     settings = get_settings()
     if settings.retrieval_backend == "keyword":
@@ -546,6 +609,18 @@ def get_embedder() -> Embedder | KeywordEmbedder | GeminiEmbedder:
 
 @lru_cache
 def get_reranker() -> Reranker | LexicalReranker:
+    """
+            get_reranker()
+                |
+        ------------------
+        |        |       |
+        keyword  gemini fastembed
+        |        |       |
+        lexical Gemini CE FastEmbed CE      
+    
+    returns lecical, gemini, reranker 
+    """
+    
     """Cross-encoder when the models are available, lexical overlap otherwise."""
     settings = get_settings()
     if (
@@ -573,3 +648,35 @@ def get_reranker() -> Reranker | LexicalReranker:
         logger.warning("Cross-encoder unavailable, using lexical overlap: %s", exc.__cause__ or exc)
         return LexicalReranker()
     return reranker
+
+
+"""
+User Query
+     |
+     v
+get_embedder()                          keyword/gemini+bm25/fastembed(ONNX)
+     |
+     +------------------+
+     |                  |
+ Dense Vector      Sparse Vector
+     |                  |
+     +--------Hybrid Search--------+
+                    |
+             Top K Documents
+                    |
+             get_reranker()             keyword(lexical)/gemini CE/fastembed Cross encoder
+                    |
+          CrossEncoder / Gemini
+                    |
+           Relevance Scores
+                    |
+             Reordered Docs
+                    |
+                   LLM
+                    |
+                  Answer
+                  
+This file acts as the Embedding + Hybrid Search + Reranking layer of the RAG pipeline, 
+automatically switching between BM25, FastEmbed (ONNX), and Gemini backends while providing 
+fallback mechanisms when models are unavailable.
+"""

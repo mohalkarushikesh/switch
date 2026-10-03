@@ -1,9 +1,23 @@
-"""The retrieval pipeline: HyDE -> hybrid search -> cross-encoder rerank.
+"""User Question
+      ↓
+HyDE (optional)
+      ↓
+Hybrid Search
+(Dense + Sparse)
+      ↓
+Top K Documents
+      ↓
+Cross Encoder Rerank
+      ↓
+Best Context
+      ↓
+LLM Answer
+
+## The retrieval pipeline: HyDE -> hybrid search -> cross-encoder rerank.
 
 Kept independent of LangGraph so it can be exercised and evaluated on its own -
 `python -m advanced_rag.evaluation.runner --retrieval` drives exactly these entry
-points to compare strategies without generating anything.
-"""
+points to compare strategies without generating anything."""
 
 from __future__ import annotations
 
@@ -22,7 +36,19 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class RetrievalResult:
+class RetrievalResult:              
+    """
+    Stores retrieval output: chunks, query_used, hyde_document, mode, reranked, cross_encoder
+    # Example:
+        Question: Pod crash issue
+        ↓
+        Retrieved 10 chunks
+        ↓
+        Saved in RetrievalResult
+    
+    Useful properties: top_score, highest_chunk_score (mean_score/Average score). 
+    """
+    
     """Everything the graph needs to know about one retrieval pass."""
 
     chunks: list[RetrievedChunk] = field(default_factory=list)
@@ -46,6 +72,12 @@ class RetrievalResult:
 
 
 class Retriever:
+    """
+    Main retrieval orchestrator.
+    
+    Loads: store, re-ranker, LLM, settings
+    """
+
     """Composes the retrieval stages behind one call."""
 
     def __init__(
@@ -73,8 +105,22 @@ class Retriever:
         return self._llm
 
     # -------------------------------------------------------------- retrieval
-
-    def retrieve(
+    """
+    # Most important function.
+    
+    Question
+        ↓
+    Generate HyDE
+        ↓
+    Hybrid Search
+        ↓
+    Top K Results
+        ↓
+    Rerank
+        ↓
+    Return
+    """
+    def retrieve(                           
         self,
         question: str,
         *,
@@ -87,7 +133,7 @@ class Retriever:
         doc_type: str | None = None,
     ) -> RetrievalResult:
         use_hyde = self.settings.enable_hyde if use_hyde is None else use_hyde
-
+    
         hyde_doc: str | None = None
         query = question
         if use_hyde:
@@ -112,10 +158,42 @@ class Retriever:
             result.reranked = True
             result.cross_encoder = self.reranker.is_cross_encoder
         return result
+    
+    """
+    Question:
+        Why is pod in CrashLoopBackOff?
+    HyDE generates:
+        A pod enters CrashLoopBackOff when...
+        
+    Now query becomes : riginal Question + Generated Answer
+    
+    Benifits : Question language + Document language -> better retrieval s
+    """
+
+    """
+    Hybrid search : 
+    
+    Query
+        ↓
+    Dense Embedding
+        ↓
+    Vector Search + BM25 Search
+        ↓
+    Fusion
+        ↓
+    Top K Documents
+    """
 
     def rerank(
         self, question: str, chunks: list[RetrievedChunk], *, top_n: int | None = None
     ) -> list[RetrievedChunk]:
+        """
+        Cross Encoder or Gemini Reranker or Lexical Reranker
+        
+        Hybrid Search = Candidate Generation
+        Cross Encoder = Precision Improvement
+        """
+        
         """Re-score candidates with a cross-encoder and keep the best `top_n`.
 
         The bi-encoder that produced the candidates scored query and document
@@ -124,13 +202,18 @@ class Retriever:
         """
         top_n = top_n or self.settings.rerank_top_n
         reranker = self.reranker
-        raw = reranker.score(question, [c.chunk.text for c in chunks])
+        raw = reranker.score(question, [c.chunk.text for c in chunks])              # Returns: Logits [4.2, 1.5, 5.8]
         for chunk, logit in zip(chunks, raw, strict=True):
             # Squash to 0..1 so CRAG_RELEVANCE_FLOOR means something stable.
-            chunk.rerank_score = sigmoid(logit)
+            chunk.rerank_score = sigmoid(logit)                                     # Convert to Probability : 5.8 -> 0.997
             chunk.rerank_is_authoritative = reranker.is_cross_encoder
 
-        if not reranker.is_cross_encoder:
+        if not reranker.is_cross_encoder:                                           # Do: keep the original order 
+                                                                                    # Reason:
+                                                                                    # Measured performance was worse when reordered.
+                                                                                    # Only score is used.
+                                                                                    
+                                                                                    # sort : rerank_score + retrieval_score -> best documents first 
             # Measured: reordering by the lexical stand-in *lowered* precision@5
             # from 0.76 to 0.64 on the golden set. It is too weak a signal to
             # overrule fusion, so it only supplies a score for the CRAG floor and
@@ -147,6 +230,14 @@ class Retriever:
         )[:top_n]
 
     def generate_hyde(self, question: str) -> str | None:
+        """
+        Question
+            ↓
+        Fake Answer
+            ↓           
+        Embed Fake Answer
+        """
+        
         """Draft a hypothetical answer passage to embed instead of the question.
 
         Questions and documents are written differently; a question rarely shares
@@ -170,7 +261,7 @@ class Retriever:
             return None
         return result.text
 
-    def rewrite_query(self, question: str, *, n: int = 3) -> list[str]:
+    def rewrite_query(self, question: str, *, n: int = 3) -> list[str]:                # (Corrective RAG)
         """CRAG's corrective step: propose alternative queries after a bad pass."""
         from pydantic import BaseModel, Field
 
@@ -191,10 +282,28 @@ class Retriever:
             return []
         return [q.strip() for q in rewrites.queries[:n] if q.strip()]
 
-    def retrieve_multi(
+    def retrieve_multi(                         
         self, queries: list[str], *, top_k: int | None = None, top_n: int | None = None,
         question: str | None = None,
     ) -> list[RetrievedChunk]:
+        """
+        Query 1
+        ↓
+        Query 2
+        ↓
+        Query 3
+        ↓
+        Combine Results
+        ↓
+        Remove Duplicates
+        ↓
+        Rerank
+        ↓
+        Return
+
+        results -> multi recall
+        You don't miss relevant documents 
+        """
         """Run several queries and rerank the deduplicated union."""
         pooled: dict[str, RetrievedChunk] = {}
         for query in queries:
@@ -207,7 +316,7 @@ class Retriever:
         return self.rerank(question or queries[0], list(pooled.values()), top_n=top_n)
 
 
-def format_context(chunks: list[RetrievedChunk]) -> str:
+def format_context(chunks: list[RetrievedChunk]) -> str:            # Converts retrieved chunks into prompt context.
     """Render chunks as the numbered blocks the answer prompt cites as [n]."""
     blocks = []
     for index, hit in enumerate(chunks, start=1):
@@ -217,7 +326,8 @@ def format_context(chunks: list[RetrievedChunk]) -> str:
     return "\n\n".join(blocks)
 
 
-def as_chunks(chunks: list[RetrievedChunk]) -> list[Chunk]:
+def as_chunks(chunks: list[RetrievedChunk]) -> list[Chunk]:         # Simple helper function.
+                                                                    # Converts: RetrievedChunk -> Chunk
     return [c.chunk for c in chunks]
 
 
@@ -225,7 +335,45 @@ _retriever: Retriever | None = None
 
 
 def get_retriever() -> Retriever:
+    """
+    Singleton pattern.
+    
+    Insted of:
+    Retriever()
+    Retriever()
+    Retriever()
+
+    Only one object is created: _retriever & reused 
+    """
+    
     global _retriever
     if _retriever is None:
         _retriever = Retriever()
     return _retriever
+
+"""
+User Question
+      ↓
+generate_hyde()
+      ↓
+Question + Hypothetical Answer
+      ↓
+Hybrid Store Search
+      ↓
+Dense Search + BM25 Search
+      ↓
+Top K Chunks
+      ↓
+Cross Encoder Reranker
+      ↓
+Top N Chunks
+      ↓
+format_context()            # Converts retrieved chunks into prompt context.
+      ↓
+Context for LLM
+      ↓
+Final Answer
+
+This file is the retrieval orchestration layer that performs HyDE query expansion → hybrid retrieval 
+→ cross-encoder reranking → context preparation before sending the best chunks to the LLM.
+"""
