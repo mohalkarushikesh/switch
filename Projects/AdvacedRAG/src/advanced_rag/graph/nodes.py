@@ -443,7 +443,7 @@ def sql_approval_node(state: RagState) -> dict:                     # Human-in-t
     if proposal is None or not proposal.sql:
         return {"awaiting_approval": False}
 
-    decision = interrupt(
+    decision = interrupt(                                           # interrupt 
         {
             "type": "sql_approval",
             "question": state["original_question"],
@@ -597,7 +597,7 @@ Question → Guardrails → Cache → Route → Retrieve → Grade(CRAG) → Rew
 ✅ HyDE
 ✅ Cross-Encoder Reranking
 ✅ CRAG (Context Grading + Rewrite)
-✅ Self-RAG (Self Critique)                 # special reflective token
+✅ Self-RAG (Self Critique)            # when to retrieve external data, special reflective token 
 ✅ Text-to-SQL
 ✅ Human Approval for SQL
 ✅ Output Validation

@@ -654,7 +654,7 @@ def get_reranker() -> Reranker | LexicalReranker:
 User Query
      |
      v
-get_embedder()                          keyword/gemini+bm25/fastembed(ONNX)
+get_embedder()                          keyword/gemini(BAAI/bge-small-en-v1.5)+bm25/fastembed(ONNX)
      |
      +------------------+
      |                  |

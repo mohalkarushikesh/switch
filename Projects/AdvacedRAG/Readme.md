@@ -287,28 +287,46 @@ were added to, which is the fastest way to measure what each one buys.
 
 ## Measured retrieval results
 
-`python -m advanced_rag.evaluation.runner --retrieval`, 15 labelled cases, k=5,
-`bge-base-en-v1.5` dense + local BM25 sparse:
+`python -m advanced_rag.evaluation.runner --retrieval`, 23 labelled cases
+(15 standard + 8 paraphrase-only *hard* cases), k=5, Gemini `gemini-embedding-001`
+dense (dim=768) + local BM25 sparse, with the Gemini LLM-scored reranker:
 
-| Strategy | p@5 | hit@5 / recall / MRR |
-| --- | --- | --- |
-| dense only | 0.65 | 1.00 |
-| sparse only (BM25) | 0.68 | 1.00 |
-| hybrid (RRF) | 0.71 | 1.00 |
-| **hybrid (weighted)** | **0.76** | 1.00 |
-| hybrid + rerank (score-only) | 0.76 | 1.00 |
+| Strategy | p@5 | hit@5 | recall | MRR | NDCG | hard MRR (n=8) | time |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| dense only | 0.77 | 1.00 | 1.00 | 0.96 | 0.97 | 0.88 | 17.7s |
+| sparse only (BM25) | 0.52 | 0.91 | 0.91 | 0.79 | 0.82 | 0.40 | 0.1s |
+| hybrid (RRF) | 0.66 | 1.00 | 1.00 | 0.98 | 0.98 | 0.94 | 12.5s |
+| hybrid (weighted) | 0.75 | 1.00 | 1.00 | 0.98 | 0.98 | 0.94 | 12.1s |
+| **hybrid + rerank** | **0.83** | **1.00** | **1.00** | **1.00** | **1.00** | **1.00** | 83.9s |
+| hybrid + rerank + HyDE | 0.79 | 0.96 | 0.96 | 0.96 | 0.96 | 0.88 | 163.0s |
 
-Two things this actually establishes, and one it does not:
+What this run establishes:
 
-- **Hybrid fusion earns its complexity.** 0.76 beats either arm alone (0.65 dense,
-  0.68 sparse), so the two are finding genuinely different passages.
-- **Weighted fusion beats RRF** (0.76 vs 0.71) on this corpus, which is why
-  `HYBRID_DENSE_WEIGHT` exists as a dial rather than settling for weight-free RRF.
-- **It does not establish anything about ranking quality.** hit@5, recall and MRR
-  are pegged at 1.00 for every strategy — the golden set is saturated and cannot
-  discriminate. Only p@5 moves. The runner prints a warning saying so.
+- **The authoritative Gemini reranker is the clear winner.** It tops every metric
+  (p@5 0.83, MRR/NDCG 1.00, and 1.00 on the hard subset). This is the opposite of
+  the lexical stand-in reranker used when the local fastembed models can't
+  download — that one is *harmful* and stays score-only (see below).
+- **The hard subset is what now separates the strategies.** On the 15 standard
+  cases hit/recall are saturated near 1.00; the 8 paraphrase-only cases discriminate.
+  Hybrid lifts hard MRR from dense's 0.88 to 0.94, reranking takes it to 1.00, and
+  sparse collapses to 0.40 — the two arms are finding genuinely different passages.
+- **Weighted fusion keeps the edge on p@5** (0.75 vs RRF 0.66) at equal MRR, which
+  is why `HYBRID_DENSE_WEIGHT` stays a dial rather than settling for weight-free RRF.
+- **HyDE costs more than it returns here** — it doubles latency to 163s and drops
+  hard MRR back to 0.88 (Gemini quota 429s during the run degraded it further), so
+  it is off the default path.
 
-Reranking is measured as *harmful* here and is therefore score-only: see below.
+Reranking latency (83.9s) is dominated by one LLM call per candidate plus 429
+back-off; the fast path uses hybrid weighted and reranks only when enabled.
+
+### Out-of-corpus abstention
+
+Three negative queries with no supporting document all abstained — top retrieval
+score ≈0.002, far under the 0.25 CRAG floor:
+
+- "What is the maximum number of pods per node on our cluster…"
+- "How do I rotate the etcd data-encryption keys?"
+- "What is our disaster-recovery procedure for a full etcd…"
 
 ### A weak score must not drive decisions
 
@@ -405,7 +423,7 @@ tests/                 offline suite (no API key needed)
 
 Verified on this machine:
 
-- Chunking: 8 documents → 49 chunks (median 415 chars).
+- Chunking: 9 documents → 49 chunks (median 415 chars).
 - Graph compiles with all 13 nodes; the offline test suite covers the CRAG and
   Self-RAG loop bounds, the SQL approval gate refusing to execute, guardrail
   block/allow behaviour, SQL validation, cache tiers, retrieval fusion arithmetic,

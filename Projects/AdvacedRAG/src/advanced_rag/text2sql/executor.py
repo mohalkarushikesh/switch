@@ -235,5 +235,7 @@ Step 7
 """
 
 """
-This file acts as the database firewall for Text-to-SQL by cleaning AI-generated SQL, validating it as a single read-only SELECT query, enforcing limits, requiring human approval, executing it in a rollback-only transaction, and formatting the results for the LLM.
+This file acts as the database firewall for Text-to-SQL by cleaning AI-generated SQL, 
+validating it as a single read-only SELECT query, enforcing limits, requiring human approval, 
+executing it in a rollback-only transaction, and formatting the results for the LLM.
 """

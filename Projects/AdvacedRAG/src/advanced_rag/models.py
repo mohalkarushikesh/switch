@@ -1,4 +1,6 @@
-"""Shared data models used across ingestion, retrieval, the graph and the API."""
+"""This file contains shared data models used across the entire RAG application (Ingestion → Retrieval → LangGraph → API).
+
+##Shared data models used across ingestion, retrieval, the graph and the API."""
 
 from __future__ import annotations
 
@@ -9,7 +11,7 @@ from pydantic import BaseModel, Field
 
 
 class Chunk(BaseModel):
-    """A retrievable unit of text plus its provenance."""
+    """A retrievable unit of text plus its provenance."""                       # Represents a single piece of document text stored in the vector database.
 
     id: str
     text: str
@@ -20,38 +22,38 @@ class Chunk(BaseModel):
     #: Free-form extras (k8s component, severity, version...) kept in the payload.
     metadata: dict[str, Any] = Field(default_factory=dict)
 
-    def payload(self) -> dict[str, Any]:
+    def payload(self) -> dict[str, Any]:                # converts chunk into a dictionary for storage
         return {
             "chunk_id": self.id,
             "text": self.text,
-            "source": self.source,
+            "source": self.source,                      # source file/ document
             "title": self.title,
             "section": self.section,
-            "doc_type": self.doc_type,
+            "doc_type": self.doc_type,                  # runbook, manual, etc.
             **self.metadata,
         }
 
-    def citation(self) -> str:
+    def citation(self) -> str:                          # creates a citation string
         where = self.title or self.source
         return f"{where} - {self.section}" if self.section else where
 
 
-class RetrievedChunk(BaseModel):
+class RetrievedChunk(BaseModel):                        # A chunk returned by retrieval with ranking scores.
     """A chunk with the scores that got it here."""
 
     chunk: Chunk
     #: Fused retrieval score (RRF or weighted hybrid), higher is better.
-    retrieval_score: float = 0.0
+    retrieval_score: float = 0.0                        # vector/hybrid retrieval score
     #: Reranker score, normalised to 0..1.
-    rerank_score: float | None = None
+    rerank_score: float | None = None                   # cross-encoder reranker score
     #: True only when `rerank_score` came from a real cross-encoder. The lexical
     #: fallback scorer is informative to look at but must not drive decisions:
     #: measured, it scores 0.005-0.133 on queries where dense retrieval returned
     #: exactly the right document, so treating it as authoritative makes the CRAG
     #: floor reject good context.
-    rerank_is_authoritative: bool = False
-    dense_rank: int | None = None
-    sparse_rank: int | None = None
+    rerank_is_authoritative: bool = False               # whether reranker should be trusted
+    dense_rank: int | None = None                       # vector search rank 
+    sparse_rank: int | None = None                      # sparse rank 
 
     @property
     def score(self) -> float:
@@ -61,7 +63,7 @@ class RetrievedChunk(BaseModel):
         return self.retrieval_score
 
 
-class Route(StrEnum):
+class Route(StrEnum):                                   # Determines where the query goes.
     """Where the router sends a question."""
 
     VECTOR = "vector"
@@ -70,7 +72,8 @@ class Route(StrEnum):
     REJECT = "reject"
 
 
-class Verdict(StrEnum):
+class Verdict(StrEnum):                                 # CRAG evaluates retrieval quality.
+                                                        # Used after retrieval to decide: procceed, retrive more documents, reject context 
     """CRAG's assessment of the retrieved context."""
 
     CORRECT = "correct"
@@ -78,18 +81,19 @@ class Verdict(StrEnum):
     INCORRECT = "incorrect"
 
 
-class Citation(BaseModel):
+class Citation(BaseModel):                              # Stores source references.
+                                                        # <- fields 
     source: str
     title: str = ""
     section: str = ""
     score: float = 0.0
 
 
-class SqlProposal(BaseModel):
+class SqlProposal(BaseModel):                           # Represents AI-generated SQL waiting for approval.
     """A generated query awaiting human approval."""
 
     sql: str
-    rationale: str = ""
+    rationale: str = ""                                 # why query was created
     tables: list[str] = Field(default_factory=list)
     read_only: bool = True
     approved: bool = False
@@ -99,8 +103,11 @@ class SqlProposal(BaseModel):
     row_count: int = 0
     error: str | None = None
 
+"""
+User Question ↓ Generate SQL ↓ Human Approval ↓ Execute ↓ Store Results
+"""
 
-class GuardrailOutcome(BaseModel):
+class GuardrailOutcome(BaseModel):                  # Stores moderation/safety results.
     """Result of one guardrail layer.
 
     `passed` means the layer *ran* and cleared the content. A layer that could not
@@ -119,7 +126,12 @@ class GuardrailOutcome(BaseModel):
         return self.action != "skip"
 
 
-class TraceStep(BaseModel):
+class TraceStep(BaseModel):                 # Stores LangGraph execution steps.
+                                            # Router → 20ms
+                                            # Retriever → 100ms
+                                            # CRAG → 50ms
+                                            # Generator → 300ms
+                                            # Used for pipeline visualization.
     """One graph node execution, for the UI's pipeline view."""
 
     node: str
@@ -127,7 +139,17 @@ class TraceStep(BaseModel):
     elapsed_ms: int = 0
 
 
-class AnswerResponse(BaseModel):
+class AnswerResponse(BaseModel):            # Final API response sent back to frontend.
+                                            # Contains everything:
+                                                # Question & Answer
+                                                # Routing: route 
+                                                # References - citations
+                                                # SQL Information: SQL, awating_approval
+                                                # Caching: cached, cache_kind
+                                                # generation type: extractive 
+                                                # safety : guardrails, blocked
+                                                # Graph Trace: Trace 
+                                                # Metrics : input_tokens, output_tokens, latency_ms 
     """What the API returns."""
 
     question: str
@@ -150,3 +172,40 @@ class AnswerResponse(BaseModel):
     input_tokens: int = 0
     output_tokens: int = 0
     latency_ms: int = 0
+
+
+"""
+Document
+   ↓
+Chunk
+   ↓
+Vector DB
+
+User Question
+      ↓
+Route
+      ↓
+Retriever
+      ↓
+RetrievedChunk
+      ↓
+CRAG Verdict
+      ↓
+(CORRECT/AMBIGUOUS/INCORRECT)
+      ↓
+Generate Answer
+      ↓
+Guardrails
+      ↓
+Trace Collection
+      ↓
+AnswerResponse
+      ↓
+Frontend/API Response
+
+This file defines the Pydantic data models used across the RAG system. Chunk stores 
+document pieces, RetrievedChunk holds retrieval scores, Route decides whether to use 
+vector search or SQL, Verdict is used by CRAG for retrieval evaluation, SqlProposal 
+manages generated SQL queries, GuardrailOutcome tracks safety checks, TraceStep logs 
+LangGraph execution, and AnswerResponse is the final API response returned to the user.
+"""
