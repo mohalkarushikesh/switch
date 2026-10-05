@@ -559,3 +559,8 @@ cd "c:/Users/2327238/Documents/dev/ai/Internal Switch/Projects/AdvacedRAG" && ./
 ![K8s SRE QUES_2 UI 3](/k8s_sre_2nd_ques_1.png)
 ![K8s SRE QUES_2 UI 4](/k8rs_sre_2nd_ques_2.png)
 ![K8s SRE QUES_2 UI 4](/k8s_sre_2nd_ques_3.png)
+
+---
+![k8s SRE QUES_3](/k8s_sre_ques_5_1.png)
+![k8s SRE QUES_3](/k8s_sre_ques_5_2.png)
+![k8s SRE QUES_3](/k8s_sre_ques_5_3.png)
