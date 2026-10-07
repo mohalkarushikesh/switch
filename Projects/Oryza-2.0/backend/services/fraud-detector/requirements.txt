@@ -1,0 +1,33 @@
+# Core dependencies from main requirements
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+
+# Database
+sqlalchemy==2.0.23
+asyncpg==0.29.0
+redis==5.0.1
+
+# Data processing and analysis
+numpy==1.26.2
+pandas==2.1.3
+scikit-learn==1.3.2
+
+# Machine learning (lightweight alternatives to heavy frameworks)
+# xgboost==2.0.2  # For gradient boosting
+# lightgbm==4.1.0  # Alternative gradient boosting
+
+# Async
+asyncio==3.4.3
+
+# Logging
+python-json-logger==2.0.7
+
+# Date handling
+python-dateutil==2.8.2
+
+# JSON handling
+orjson==3.9.10
+
+# Utilities
+python-multipart==0.0.6 

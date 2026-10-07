@@ -1,0 +1,10 @@
+{
+  "name": "oryza-root",
+  "version": "1.0.0",
+  "description": "Oryza root - use start_oryza.bat or navigate to frontend/backend directories",
+  "scripts": {
+    "start": "echo Please use start_oryza.bat to start the full application or cd frontend && npm start",
+    "frontend": "cd frontend && npm start",
+    "backend": "cd backend && python test_api_for_frontend.py"
+  }
+} 

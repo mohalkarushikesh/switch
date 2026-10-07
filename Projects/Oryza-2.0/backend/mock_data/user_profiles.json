@@ -1,0 +1,107 @@
+{
+  "portfolio": {
+    "totalValue": 1250000,
+    "totalGain": 125000,
+    "totalGainPercent": 11.11,
+    "holdings": [
+      {
+        "symbol": "RELIANCE",
+        "name": "Reliance Industries",
+        "quantity": 50,
+        "avgPrice": 2350.0,
+        "currentPrice": 2456.5,
+        "value": 122825,
+        "gain": 5325,
+        "gainPercent": 4.53,
+        "sector": "Energy"
+      },
+      {
+        "symbol": "TCS",
+        "name": "Tata Consultancy Services",
+        "quantity": 30,
+        "avgPrice": 3400.0,
+        "currentPrice": 3567.8,
+        "value": 107034,
+        "gain": 5034,
+        "gainPercent": 4.94,
+        "sector": "Technology"
+      },
+      {
+        "symbol": "HDFC",
+        "name": "HDFC Bank",
+        "quantity": 80,
+        "avgPrice": 1550.0,
+        "currentPrice": 1654.3,
+        "value": 132344,
+        "gain": 8344,
+        "gainPercent": 6.73,
+        "sector": "Banking"
+      },
+      {
+        "symbol": "ADANIGREEN",
+        "name": "Adani Green Energy",
+        "quantity": 40,
+        "avgPrice": 950.0,
+        "currentPrice": 1125.5,
+        "value": 45020,
+        "gain": 7020,
+        "gainPercent": 18.47,
+        "sector": "Renewable Energy"
+      }
+    ],
+    "assetAllocation": {
+      "equity": 70,
+      "debt": 20,
+      "commodities": 5,
+      "cash": 5
+    },
+    "sectorAllocation": {
+      "Technology": 35,
+      "Banking": 25,
+      "Energy": 20,
+      "Renewable": 10,
+      "Others": 10
+    }
+  },
+  "riskProfile": {
+    "score": 42.5,
+    "category": "Moderate",
+    "tolerance": "Medium",
+    "investmentHorizon": "5-10 years",
+    "lastAssessed": "2025-08-06T00:49:27.374884"
+  },
+  "goals": [
+    {
+      "id": "goal001",
+      "name": "Retirement Fund",
+      "targetAmount": 10000000,
+      "currentAmount": 2500000,
+      "targetDate": "2045-12-31",
+      "monthlyContribution": 50000,
+      "progress": 25,
+      "feasibility": "on_track",
+      "aiConfidence": 0.82
+    },
+    {
+      "id": "goal002",
+      "name": "Children's Education",
+      "targetAmount": 5000000,
+      "currentAmount": 1000000,
+      "targetDate": "2035-06-30",
+      "monthlyContribution": 25000,
+      "progress": 20,
+      "feasibility": "needs_adjustment",
+      "aiConfidence": 0.75
+    }
+  ],
+  "preferences": {
+    "esgInvesting": true,
+    "autoRebalancing": true,
+    "taxOptimization": true,
+    "notifications": {
+      "email": true,
+      "sms": false,
+      "push": true
+    }
+  }
+}

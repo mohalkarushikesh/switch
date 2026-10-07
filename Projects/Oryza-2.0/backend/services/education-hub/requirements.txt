@@ -1,0 +1,36 @@
+# Core dependencies from main requirements
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+
+# Database
+sqlalchemy==2.0.23
+asyncpg==0.29.0
+redis==5.0.1
+
+# Data processing
+numpy==1.26.2
+pandas==2.1.3
+
+# Content management
+markdown==3.5.1
+python-multipart==0.0.6
+
+# PDF generation for certificates
+reportlab==4.0.7
+
+# Async
+asyncio==3.4.3
+
+# Logging
+python-json-logger==2.0.7
+
+# Date handling
+python-dateutil==2.8.2
+
+# JSON handling
+orjson==3.9.10
+
+# Search and indexing (for content search)
+# In production would use Elasticsearch
+# elasticsearch==8.11.0 

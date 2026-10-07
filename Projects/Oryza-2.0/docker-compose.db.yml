@@ -1,0 +1,104 @@
+version: '3.8'
+
+services:
+  # PostgreSQL - Main database for structured data
+  postgres:
+    image: postgres:15-alpine
+    container_name: oryza-postgres
+    environment:
+      POSTGRES_USER: oryza_user
+      POSTGRES_PASSWORD: oryza_secure_pass_2024
+      POSTGRES_DB: oryza_db
+      POSTGRES_INITDB_ARGS: "-E UTF8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/database/init:/docker-entrypoint-initdb.d
+    networks:
+      - oryza-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oryza_user -d oryza_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis - For caching and real-time data
+  redis:
+    image: redis:7-alpine
+    container_name: oryza-redis
+    command: redis-server --requirepass oryza_redis_pass_2024
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - oryza-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MongoDB - For unstructured data (news, logs, etc.)
+  mongodb:
+    image: mongo:6
+    container_name: oryza-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: oryza_mongo
+      MONGO_INITDB_ROOT_PASSWORD: oryza_mongo_pass_2024
+      MONGO_INITDB_DATABASE: oryza_nosql
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+      - ./backend/database/mongo-init:/docker-entrypoint-initdb.d
+    networks:
+      - oryza-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # TimescaleDB - For time-series data (market prices)
+  timescaledb:
+    image: timescale/timescaledb:latest-pg15
+    container_name: oryza-timescale
+    environment:
+      POSTGRES_USER: oryza_ts_user
+      POSTGRES_PASSWORD: oryza_ts_pass_2024
+      POSTGRES_DB: oryza_timeseries
+    ports:
+      - "5433:5432"
+    volumes:
+      - timescale_data:/var/lib/postgresql/data
+    networks:
+      - oryza-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oryza_ts_user -d oryza_timeseries"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Adminer - Database management UI
+  adminer:
+    image: adminer:latest
+    container_name: oryza-adminer
+    ports:
+      - "8090:8080"
+    networks:
+      - oryza-network
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+      ADMINER_DESIGN: pepa-linha-dark
+
+volumes:
+  postgres_data:
+  redis_data:
+  mongo_data:
+  timescale_data:
+
+networks:
+  oryza-network:
+    driver: bridge 

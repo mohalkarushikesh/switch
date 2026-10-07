@@ -1,0 +1,47 @@
+trigger:
+- master
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  azureSubscription: 'sc-azure-sub'          # Azure service connection name
+  resourceGroup: 'CTS-VibeAppca620'
+  webAppName: 'CTS-VibeAppca6202-2'          # API App Service name
+  startupCmd: >-
+    bash -c "pip install -r backend/requirements.txt && cd backend && gunicorn -k uvicorn.workers.UvicornWorker -w 2 test_api_for_frontend:app -b 0.0.0.0:$PORT"
+
+steps:
+- script: |
+    set -e
+    cd $(Build.SourcesDirectory)
+    zip -r $(Build.ArtifactStagingDirectory)/oryza_deploy.zip . \
+      -x "venv/*" ".git/*" "node_modules/*" "frontend/node_modules/*" "backend/**/node_modules/*" "**/__pycache__/*" ".pytest_cache/*" ".mypy_cache/*"
+  displayName: Create deployment zip
+
+- task: AzureCLI@2
+  displayName: Configure runtime and startup
+  inputs:
+    azureSubscription: $(azureSubscription)
+    scriptType: bash
+    scriptLocation: inlineScript
+    inlineScript: |
+      set -e
+      az webapp config set -g $(resourceGroup) -n $(webAppName) --linux-fx-version "PYTHON|3.11" --always-on true
+      az webapp config set -g $(resourceGroup) -n $(webAppName) --startup-file '$(startupCmd)'
+
+- task: AzureWebApp@1
+  displayName: Deploy to App Service
+  inputs:
+    azureSubscription: $(azureSubscription)
+    appName: $(webAppName)
+    package: $(Build.ArtifactStagingDirectory)/oryza_deploy.zip
+
+- task: AzureCLI@2
+  displayName: Restart app
+  inputs:
+    azureSubscription: $(azureSubscription)
+    scriptType: bash
+    scriptLocation: inlineScript
+    inlineScript: |
+      az webapp restart -g $(resourceGroup) -n $(webAppName) 

@@ -1,0 +1,74 @@
+# Oryza Platform Environment Variables Template
+# Copy this file to .env and update with your values
+
+# Application
+NODE_ENV=development
+APP_NAME=Oryza
+APP_VERSION=1.0.0
+
+# Frontend
+REACT_APP_API_URL=http://localhost:8889/api/v1
+REACT_APP_WS_URL=ws://localhost:8889/ws
+REACT_APP_ENABLE_AI_MONITOR=true
+
+# Backend API
+API_HOST=0.0.0.0
+API_PORT=8889
+SECRET_KEY=your-secret-key-here-change-in-production
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+
+# Database (for production)
+DATABASE_URL=postgresql://user:password@localhost/oryza
+REDIS_URL=redis://localhost:6379
+MONGODB_URL=mongodb://localhost:27017/oryza
+
+# AI Services
+AI_MODELS_PATH=./models
+ENABLE_GPU=false
+MAX_CONCURRENT_AI_TASKS=10
+AI_RESPONSE_TIMEOUT=30
+
+# External APIs (for production)
+BROKER_API_KEY=your-broker-api-key
+BROKER_API_SECRET=your-broker-api-secret
+NEWS_API_KEY=your-news-api-key
+MARKET_DATA_API_KEY=your-market-data-api-key
+
+# Security
+CORS_ORIGINS=http://localhost:3000,http://localhost:8080
+RATE_LIMIT_PER_MINUTE=60
+ENABLE_HTTPS=false
+
+# Monitoring
+ENABLE_LOGGING=true
+LOG_LEVEL=INFO
+SENTRY_DSN=your-sentry-dsn-for-error-tracking
+
+# Email (for notifications)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your-email@gmail.com
+SMTP_PASSWORD=your-app-password
+
+# Payment Gateway (for premium features)
+RAZORPAY_KEY_ID=your-razorpay-key
+RAZORPAY_KEY_SECRET=your-razorpay-secret
+
+# Feature Flags
+ENABLE_BACKTESTING=true
+ENABLE_WEALTH_CONCIERGE=true
+ENABLE_MULTI_AGENT=true
+ENABLE_ESG_SCORING=true
+ENABLE_GOAL_PLANNER=true
+ENABLE_NEWS_SENTIMENT=true
+
+# Performance
+CACHE_TTL=3600
+MAX_PORTFOLIO_SIZE=100
+WEBSOCKET_PING_INTERVAL=30
+
+# Demo Mode
+DEMO_MODE=true
+DEMO_USER_EMAIL=test@example.com
+DEMO_USER_PASSWORD=test123 

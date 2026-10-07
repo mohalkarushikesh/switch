@@ -1,0 +1,175 @@
+version: '3.8'
+
+services:
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:8080
+      - REACT_APP_WS_URL=ws://localhost:8002/ws
+    depends_on:
+      - api-gateway
+    networks:
+      - oryza-network
+
+  # API Gateway
+  api-gateway:
+    build:
+      context: ./backend/services/api-gateway
+      dockerfile: Dockerfile.simple
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - AUTH_SERVICE_URL=http://auth-service:8001
+      - PORTFOLIO_SERVICE_URL=http://portfolio-service:8003
+      - MARKET_SERVICE_URL=http://market-service:8005
+      - WEBSOCKET_SERVICE_URL=http://websocket-service:8002
+      - JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
+      - CORS_ORIGINS=http://localhost:3000
+    depends_on:
+      - auth-service
+      - portfolio-service
+      - market-service
+    networks:
+      - oryza-network
+
+  # Auth Service
+  auth-service:
+    build:
+      context: ./backend/services/auth-service
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      - PORT=8001
+      - DATABASE_URL=postgresql+asyncpg://oryza_user:oryza_secure_pass_2024@postgres:5432/oryza_db
+      - JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
+      - CORS_ORIGINS=http://localhost:3000,http://localhost:8080
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - oryza-network
+
+  # WebSocket Service
+  websocket-service:
+    build:
+      context: ./backend/services/websocket-service
+      dockerfile: Dockerfile
+    ports:
+      - "8002:8002"
+    environment:
+      - PORT=8002
+      - JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
+      - REDIS_URL=redis://redis:6379/1
+      - CORS_ORIGINS=http://localhost:3000
+    depends_on:
+      - redis
+    networks:
+      - oryza-network
+
+  # Portfolio Service
+  portfolio-service:
+    build:
+      context: ./backend/services/portfolio-service
+      dockerfile: Dockerfile
+    ports:
+      - "8003:8003"
+    environment:
+      - PORT=8003
+      - CORS_ORIGINS=http://localhost:3000,http://localhost:8080
+    networks:
+      - oryza-network
+
+  # Market Service
+  market-service:
+    build:
+      context: ./backend/services/market-service
+      dockerfile: Dockerfile.simple
+    ports:
+      - "8005:8005"
+    environment:
+      - PORT=8005
+      - WEBSOCKET_SERVICE_URL=http://websocket-service:8002
+      - CORS_ORIGINS=http://localhost:3000,http://localhost:8080
+    depends_on:
+      - websocket-service
+    networks:
+      - oryza-network
+
+  # Trading Service (Simple mock for demo)
+  trading-service:
+    build:
+      context: ./backend/services/trading-service
+      dockerfile: Dockerfile.simple
+    ports:
+      - "8004:8004"
+    environment:
+      - PORT=8004
+      - CORS_ORIGINS=http://localhost:3000,http://localhost:8080
+    networks:
+      - oryza-network
+
+  # Databases
+  postgres:
+    image: postgres:15-alpine
+    container_name: oryza-postgres
+    environment:
+      POSTGRES_USER: oryza_user
+      POSTGRES_PASSWORD: oryza_secure_pass_2024
+      POSTGRES_DB: oryza_db
+      POSTGRES_INITDB_ARGS: "-E UTF8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/database/init:/docker-entrypoint-initdb.d
+    networks:
+      - oryza-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oryza_user -d oryza_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: oryza-redis
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - oryza-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Database UI
+  adminer:
+    image: adminer:latest
+    container_name: oryza-adminer
+    ports:
+      - "8090:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    networks:
+      - oryza-network
+    depends_on:
+      - postgres
+
+networks:
+  oryza-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data: 

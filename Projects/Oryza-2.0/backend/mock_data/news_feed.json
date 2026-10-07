@@ -1,0 +1,88 @@
+{
+  "articles": [
+    {
+      "id": "news001",
+      "title": "RBI Maintains Policy Rate, Markets React Positively",
+      "source": "Economic Times",
+      "category": "Economy",
+      "summary": "The Reserve Bank of India maintained the repo rate at 6.5%, in line with market expectations.",
+      "sentiment": "positive",
+      "impact": "medium",
+      "timestamp": "2025-08-06T00:49:27.369664",
+      "tags": [
+        "RBI",
+        "Interest Rates",
+        "Economy"
+      ]
+    },
+    {
+      "id": "news002",
+      "title": "TCS Announces Strong Q3 Results, Beats Estimates",
+      "source": "Business Standard",
+      "category": "Earnings",
+      "summary": "TCS reported a 12% YoY growth in net profit, exceeding analyst expectations.",
+      "sentiment": "positive",
+      "impact": "high",
+      "timestamp": "2025-08-05T22:49:27.369680",
+      "tags": [
+        "TCS",
+        "Earnings",
+        "Technology"
+      ]
+    },
+    {
+      "id": "news003",
+      "title": "Global Oil Prices Surge on Supply Concerns",
+      "source": "Reuters",
+      "category": "Commodities",
+      "summary": "Crude oil prices jumped 3% amid geopolitical tensions affecting supply chains.",
+      "sentiment": "negative",
+      "impact": "high",
+      "timestamp": "2025-08-05T20:49:27.369701",
+      "tags": [
+        "Oil",
+        "Energy",
+        "Global Markets"
+      ]
+    },
+    {
+      "id": "news004",
+      "title": "Adani Green Wins Major Solar Project Contract",
+      "source": "Mint",
+      "category": "Corporate",
+      "summary": "Adani Green Energy secures 2GW solar project, boosting renewable energy capacity.",
+      "sentiment": "positive",
+      "impact": "medium",
+      "timestamp": "2025-08-05T18:49:27.369706",
+      "tags": [
+        "Adani Green",
+        "Renewable Energy",
+        "ESG"
+      ]
+    },
+    {
+      "id": "news005",
+      "title": "IT Sector Faces Headwinds from Global Slowdown",
+      "source": "Financial Express",
+      "category": "Sector Analysis",
+      "summary": "Indian IT companies brace for slower growth as global clients cut spending.",
+      "sentiment": "negative",
+      "impact": "medium",
+      "timestamp": "2025-08-05T16:49:27.369710",
+      "tags": [
+        "IT Sector",
+        "Global Economy",
+        "Technology"
+      ]
+    }
+  ],
+  "totalCount": 5,
+  "categories": [
+    "Economy",
+    "Earnings",
+    "Commodities",
+    "Corporate",
+    "Sector Analysis"
+  ],
+  "lastUpdated": "2025-08-06T00:49:27.369715"
+}

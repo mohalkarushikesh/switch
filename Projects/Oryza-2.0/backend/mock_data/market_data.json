@@ -1,0 +1,105 @@
+{
+  "indices": {
+    "NIFTY50": {
+      "value": 19845.5,
+      "change": 125.3,
+      "changePercent": 0.63,
+      "volume": 2345678901,
+      "dayHigh": 19895.2,
+      "dayLow": 19725.8
+    },
+    "SENSEX": {
+      "value": 65782.3,
+      "change": 412.45,
+      "changePercent": 0.63,
+      "volume": 1876543210,
+      "dayHigh": 65950.1,
+      "dayLow": 65450.5
+    }
+  },
+  "topGainers": [
+    {
+      "symbol": "RELIANCE",
+      "name": "Reliance Industries",
+      "price": 3117.4182058962156,
+      "change": 64.55879598537716,
+      "changePercent": 2.0709058496954977,
+      "volume": 9469496
+    },
+    {
+      "symbol": "TCS",
+      "name": "Tata Consultancy Services",
+      "price": 4927.299536279742,
+      "change": 213.8724720577043,
+      "changePercent": 4.340561609517744,
+      "volume": 5008563
+    },
+    {
+      "symbol": "HDFC",
+      "name": "HDFC Bank",
+      "price": 672.6509115641776,
+      "change": 29.51944156893816,
+      "changePercent": 4.388523238643037,
+      "volume": 2013651
+    },
+    {
+      "symbol": "INFY",
+      "name": "Infosys",
+      "price": 3864.72278822745,
+      "change": 138.68336542335635,
+      "changePercent": 3.5884427686717286,
+      "volume": 9896538
+    },
+    {
+      "symbol": "ITC",
+      "name": "ITC Limited",
+      "price": 2510.493711778853,
+      "change": 63.61603124502332,
+      "changePercent": 2.534004803379774,
+      "volume": 9514291
+    }
+  ],
+  "topLosers": [
+    {
+      "symbol": "WIPRO",
+      "name": "Wipro",
+      "price": 3652.808660961096,
+      "change": -112.01515815987622,
+      "changePercent": -3.0665487452716387,
+      "volume": 4504803
+    },
+    {
+      "symbol": "BHARTIARTL",
+      "name": "Bharti Airtel",
+      "price": 2778.052424874067,
+      "change": -62.06852845284164,
+      "changePercent": -2.2342461177871864,
+      "volume": 9437808
+    },
+    {
+      "symbol": "ADANIGREEN",
+      "name": "Adani Green Energy",
+      "price": 1335.6166416292026,
+      "change": -53.2757433306371,
+      "changePercent": -3.988849919214143,
+      "volume": 3871150
+    },
+    {
+      "symbol": "HCLTECH",
+      "name": "HCL Technologies",
+      "price": 1851.9157377640556,
+      "change": -77.3242471277824,
+      "changePercent": -4.175365301508871,
+      "volume": 2133932
+    },
+    {
+      "symbol": "MARUTI",
+      "name": "Maruti Suzuki",
+      "price": 562.9499407612153,
+      "change": -24.841852622212983,
+      "changePercent": -4.4127995801228925,
+      "volume": 4738382
+    }
+  ],
+  "lastUpdated": "2025-08-06T00:49:27.353607"
+}
