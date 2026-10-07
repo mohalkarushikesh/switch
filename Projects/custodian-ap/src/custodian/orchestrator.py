@@ -63,7 +63,7 @@ class Custodian:
         """Run one invoice through the full pipeline and return its record.
 
         is_duplicate is passed to the policy layer, which blocks re-submissions.
-        account_changed flags a new payee account for a known vendor (BEC vector),
+        a.or a known vendor (BEC vector),
         which the policy layer routes to human review.
         near_duplicate flags an evasive re-submission (a prior invoice this one
         closely resembles despite a different id) for human confirmation.

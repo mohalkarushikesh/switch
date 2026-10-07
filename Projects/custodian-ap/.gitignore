@@ -20,3 +20,6 @@ mlflow.db
 data/models/
 *.safetensors
 *.gguf
+
+# don't remove this 
+.venv/

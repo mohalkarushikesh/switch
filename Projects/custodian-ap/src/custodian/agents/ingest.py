@@ -10,8 +10,7 @@ from ..models import Invoice
 from ..ocr import parse_invoice_text
 
 
-class IngestAgent:
-    """Reads invoices from dicts, JSON files, or OCR text and validates them."""
+class IngestAgent:                                                            # Reads invoices from dicts, JSON files, or OCR text and validates them.
 
     def from_dict(self, raw: dict) -> Invoice:
         """Validate a single raw invoice record into an Invoice."""

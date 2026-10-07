@@ -1,5 +1,3 @@
-I'll analyze the entire invoice processing pipeline in your custodian-ap repository to map out every micro-step, function, and method involved. Let me start by exploring the codebase structure.I'll analyze the invoice processing workflow in your Custodian AP repository. Let me explore the codebase to understand the end-to-end flow.Let me try to access the repository through GitHub's REST API to explore its structure:Now let me explore the core files to understand the invoice processing pipeline:Now let me get all the agent files and governance files:Now I have comprehensive information about the system. Let me create a detailed end-to-end flow document showing how a single invoice travels through the entire system.
-
 ## **Complete End-to-End Invoice Journey Through Custodian AP System**
 
 ### **System Overview**

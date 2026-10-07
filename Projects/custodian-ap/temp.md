@@ -11,14 +11,14 @@ vLLM, OpenRouter, Anthropic, etc.
 
 -vLLM is an open-source high-performance LLM serving engine designed to run and serve Large Language Models efficiently in production.
 
-Key Features:
-- Fast Inference: Optimized for high request throughput and low latency.
-- PagedAttention: Efficient memory management for serving large models.
-- OpenAI-Compatible API: Can expose local models through OpenAI-style endpoints.
-- Multi-GPU Support: Scales across multiple GPUs for large deployments.
+- Key Features:
+  - Fast Inference: Optimized for high request throughput and low latency.
+  - PagedAttention: Efficient memory management for serving large models.
+  - OpenAI-Compatible API: Can expose local models through OpenAI-style endpoints.
+  - Multi-GPU Support: Scales across multiple GPUs for large deployments.
 
-- One-line summary:
-vLLM is the "high-performance runtime/server" that hosts and serves LLMs efficiently.
+  - One-line summary:
+  vLLM is the "high-performance runtime/server" that hosts and serves LLMs efficiently.
 
 #### Dockerfile : Defines HOW to build a single container image (Application, Frontend, Backend, etc.)
 
@@ -47,3 +47,5 @@ image: postgres
 - docker.yml → Defines how to **build and run a single Docker container**.
 - docker-compose.yml → Defines and **manages multiple application services** (app, frontend, backend, etc.) together.
 - docker-compose-infra.yml → Defines **supporting infrastructure services** like databases, Redis, Prometheus, Grafana, Kafka, etc. separately from the application.
+
+- Langfuse: An open-source LLM observability platform used to trace, monitor, evaluate, and debug GenAI/LLM applications.
