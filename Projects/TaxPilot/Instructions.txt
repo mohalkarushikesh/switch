@@ -1,0 +1,3 @@
+1. we will configure for aws if needed but we will use (floci)
+2. we will configure others models as well but primary we will use gemini
+3. 
