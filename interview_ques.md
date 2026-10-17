@@ -240,11 +240,24 @@ The core difference lies in their form factor and purpose:
 
 86. What are **tools** in an AI agent?
 
+* tools are external functions, APIs, or utilities that the agent can call to interact with the world and perform actions
+  * They allow the agent to: 
+   * Fetch real-time data
+   * Perform actions
+   * Use specialized software
+
 87. What is **function/tool calling**?
 
 88. What is **LangGraph**?
 
 89. Why would you use LangGraph instead of a simple chain?
+
+* You would use **LangGraph** instead of a simple LangChain chain when your application requires **loops, branching, and complex state management**.
+
+  * **Simple Chain:** Operates in a strict, linear direction (Step A $\rightarrow$ Step B $\rightarrow$ Step C).
+  * **LangGraph:** Treats your workflow as a stateful graph, allowing agents to loop back, retry tasks, make conditional decisions, and pause for human-in-the-loop reviews.
+
+   **In short:** Use a simple chain for straight-line pipelines (like standard RAG), and LangGraph for advanced, multi-step agent workflows that need to make decisions and iterate.
 
 90. What is **state** in LangGraph?
 
