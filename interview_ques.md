@@ -271,17 +271,38 @@ The core difference lies in their form factor and purpose:
 
 93. Difference between **list, tuple, set, and dictionary**.
 
+* List → Ordered, mutable collection that allows duplicate values. 
+
+* Tuple → Ordered, immutable collection that allows duplicate values. 
+
+* Set → Unordered, mutable collection containing unique values. 
+
+* Dictionary → Insertion-ordered, mutable collection of key-value pairs with unique keys. 
+
 94. What are **list comprehensions**?
 
+* List Comprehension → A concise way to create a new list using a single line of code.
+
+   ```
+   [expression for item in iterable if condition]
+   ```
+
 95. What are **generators**?
+    
+    Generators → Functions that use `yield` to produce values one at a time, saving memory.
 
 96. What are **decorators**?
+   
+    Decorators → Functions that modify or extend another function’s behavior without changing its original code.
 
-97. What is the difference between **deep copy and shallow copy**?
+97. What is the difference between **deep copy and shallow copy**? 
 
-98. What is **exception handling**?
+  - Shallow Copy: Creates a new object but shares nested objects with the original.
+  - Deep Copy: Creates a new object and recursively copies nested objects, making them independent.
+  
+98.  What is **exception handling**?
 
-99. What is **OOP** and why is it useful?
+99.  What is **OOP** and why is it useful?
 
 100. What is the difference between **NumPy and Pandas**?
 
