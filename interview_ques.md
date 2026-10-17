@@ -6,6 +6,7 @@ Absolutely. Based on the interview we've been doing, here's the **full roadmap**
 ### 1. AI / ML Fundamentals
 
 1. **What is the difference between AI, Machine Learning, and Deep Learning?**
+   - Artificial Intelligence (AI) is the capability of computer systems and software to perform tasks that typically require human intelligence, such as learning, reasoning, pattern recognition, problem-solving, and decision-making.
 2. **What is the difference between supervised and unsupervised learning?**
 3. **What is overfitting? How can you detect and prevent it?**
 4. **What is the bias-variance tradeoff?**
