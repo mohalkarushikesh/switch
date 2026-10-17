@@ -1,4 +1,0 @@
-out/
-*.pt
-__pycache__/
-.pytest_cache/
