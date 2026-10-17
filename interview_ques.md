@@ -161,6 +161,8 @@ This is especially important for your profile.
 
 66. Explain the complete **RAG pipeline**.
 
+   ![RAG Pipeline](/assets/rag_pipeline.png)
+
 67. What are **embeddings**?
 
 68. What is a **vector database**?
@@ -169,23 +171,53 @@ This is especially important for your profile.
 
 70. What is the difference between **FAISS and a vector database such as Qdrant**?
 
+The core difference lies in their form factor and purpose:
+
+* **FAISS (Library):** Built by Meta, FAISS is an **in-memory library** designed purely for high-speed similarity search and vector clustering. It gives you extreme performance (and GPU support), but it **has no database features**—no built-in persistence, no native metadata filtering, no API server, and no handling for real-time updates or user permissions. You have to code all of that glue yourself.
+* **Qdrant (Vector Database):** Qdrant is a **complete, production-ready database system** built on top of search algorithms. It comes with a server, APIs, data persistence, built-in clustering, and **native metadata filtering** (e.g., searching vectors while applying strict `WHERE` clauses for user IDs or dates).
+
+* **Summary:** Choose **FAISS** for raw speed and static datasets where you want to build the infrastructure yourself; choose **Qdrant** for production apps that need metadata filtering, easy updates, and full database capabilities out of the box.
+
 71. What is **chunking** and why is it important?
+
+* The process of dividing a large document or dataset into larger, semantically meaningful sections (such as paragraphs, sentences, or themed blocks).
 
 72. What are different **chunking strategies**?
 
 73. What is **semantic search**?
 
+* Retrieve documents by meaning rather than keyword overlap.
+
 74. What is **similarity search**?
+
+* Similarity search is a technique that finds items (like text, images, or audio) that are "close" or conceptually similar to a given query item, rather than looking for exact keyword matches.
 
 75. What is **cosine similarity**?
 
 76. What is **retrieval quality**?
 
+* Retrieval quality measures how accurate, relevant, and useful the retrieved results (like documents, passages, or vectors) are to a given query.
+
 77. What is **reranking**?
+
+* **Reranking** is a two-step process: a fast initial search grabs a broad pool of results, and a smarter, more accurate model (often a cross-encoder) re-orders them to ensure the absolute best matches are at the very top.
 
 78. What happens if your RAG system retrieves irrelevant documents?
 
 79. How would you **evaluate a RAG system**?
+
+* Context Relevance (Retrieval): Are the retrieved documents actually relevant to the user's query? (Catches noisy or useless retrieval).
+
+* Faithfulness / Groundedness (Generation): Is the generated answer based only on the retrieved documents? (Catches hallucinations).
+
+* Answer Relevance (Generation): Does the generated answer directly answer the user's original question? (Catches off-topic responses).
+
+  * Popular Tools & Methods
+    * LLM-as-a-Judge
+    * Open-Source Frameworks:
+      * Ragas
+      * TruLens
+      * DeepEval
 
 80. What is the difference between **RAG and fine-tuning**?
 
@@ -196,6 +228,9 @@ This is especially important for your profile.
 81. What is **LangChain**?
 
 82. Why would you use LangChain instead of directly calling an LLM API?
+
+* Use Direct LLM APIs if: You are building a simple chatbot, a quick script, or a single-prompt feature where transparency and raw speed matter most.   
+* Use LangChain if: You are building complex production apps that require multi-step reasoning, document search pipelines (RAG), session memory, or multi-agent workflows.   
 
 83. What is a **chain**?
 
