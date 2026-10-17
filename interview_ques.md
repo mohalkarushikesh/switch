@@ -302,11 +302,17 @@ The core difference lies in their form factor and purpose:
   
 98.  What is **exception handling**?
 
+* A mechanism to handle runtime errors without abruptly terminating the program, using try, except, else, and finally in Python.
+
 99.  What is **OOP** and why is it useful?
+
+* [Object Oriented Programming](oops.md)
 
 100. What is the difference between **NumPy and Pandas**?
 
 101. Why is **NumPy faster** than regular Python loops for numerical operations?
+
+* NumPy is faster because it uses optimized, compiled C code, vectorized operations, and efficient memory management, reducing Python-level loop overhead.
 
 102. How would you process a **large dataset that doesn't fit into memory**?
 
